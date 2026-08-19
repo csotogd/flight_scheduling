@@ -33,7 +33,17 @@
   </div>
 </section>
 
+<div id="proposalsPanel" class="panel hidden">
+  <div class="panel-title">Vuelos candidatos propuestos (módulo planner, fuera de la optimización)</div>
+  <div id="proposalsSummary" class="stats-line"></div>
+  <table id="proposalsTable"></table>
+</div>
+
 <section id="dashboard" class="hidden">
+  <div class="actions">
+    <button id="proposeBtn">💡 Proponer vuelos para demanda sin ruta y reoptimizar</button>
+    <a id="xlsxBtn" class="btn-link" href="#" download>⬇ Descargar itinerario (Excel)</a>
+  </div>
   <div id="kpis" class="kpi-row"></div>
 
   <div class="two-col wide">

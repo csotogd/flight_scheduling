@@ -21,6 +21,7 @@ async function init() {
   }
   $("solveBtn").onclick = startSolve;
   $("cancelBtn").onclick = () => currentJob && fetch(`/api/jobs/${currentJob}/cancel`, { method: "POST" });
+  $("proposeBtn").onclick = proposeAndResolve;
   $("savedSolutions").onchange = async e => {
     if (!e.target.value) return;
     const sol = await (await fetch(`/api/solutions/${e.target.value}`)).json();
@@ -40,8 +41,8 @@ async function refreshSaved() {
   }
 }
 
-async function startSolve() {
-  const req = {
+function formRequest() {
+  return {
     airline: $("airline").value,
     set: +$("set").value,
     seed: +$("seed").value,
@@ -49,10 +50,45 @@ async function startSolve() {
     timeLimitSeconds: +$("timeLimit").value,
     gapTarget: 0.005,
   };
+}
+
+async function startSolve() {
   const job = await (await fetch("/api/solve", {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(req),
+    body: JSON.stringify(formRequest()),
   })).json();
+  followJob(job);
+}
+
+async function proposeAndResolve() {
+  $("proposeBtn").disabled = true;
+  try {
+    const data = await (await fetch("/api/propose", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(formRequest()),
+    })).json();
+    renderProposals(data);
+    followJob(data);
+  } finally { $("proposeBtn").disabled = false; }
+}
+
+function renderProposals(data) {
+  $("proposalsPanel").classList.remove("hidden");
+  $("proposalsSummary").textContent =
+    `demanda sin ruta: ${data.unservableBefore} O&Ds (${fmt1(data.tonnesBefore)} t) → ` +
+    `tras propuestas: ${data.unservableAfter} O&Ds (${fmt1(data.tonnesAfter)} t) sin cubrir. ` +
+    `Los ${data.proposals.length} vuelos propuestos entran como OPCIONALES: el optimizador decide.`;
+  $("proposalsTable").innerHTML =
+    "<tr><th>vuelo</th><th>ruta</th><th>salida hub</th><th>para</th><th>t objetivo</th><th>motivo</th></tr>" +
+    data.proposals.map(p => {
+      const days = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
+      const t = `${days[Math.floor(p.depMinute / 1440) % 7]} ${String(Math.floor(p.depMinute % 1440 / 60)).padStart(2, "0")}:${String(p.depMinute % 60).padStart(2, "0")}`;
+      return `<tr><td>${p.code}</td><td>${p.route.join(" → ")}</td><td>${t}</td>
+        <td>${p.targetPair}</td><td>${fmt1(p.targetTonnes)}</td><td>${p.reason}</td></tr>`;
+    }).join("");
+}
+
+function followJob(job) {
   currentJob = job.id;
   series = [];
   $("jobName").textContent = job.instance;
@@ -90,6 +126,56 @@ function svgEl(parent, tag, attrs, text) {
   return el;
 }
 
+/* Wheel-zoom + drag-pan on an SVG via its viewBox. Double click resets. */
+function makeZoomable(svg) {
+  if (svg.dataset.zoomable) return;
+  svg.dataset.zoomable = "1";
+  svg.style.cursor = "grab";
+  const pt = e => {
+    const p = svg.createSVGPoint();
+    p.x = e.clientX; p.y = e.clientY;
+    return p.matrixTransform(svg.getScreenCTM().inverse());
+  };
+  svg.addEventListener("wheel", e => {
+    e.preventDefault();
+    const vb = svg.viewBox.baseVal;
+    const k = e.deltaY > 0 ? 1.18 : 1 / 1.18;
+    const c = pt(e);
+    vb.x = c.x - (c.x - vb.x) * k;
+    vb.y = c.y - (c.y - vb.y) * k;
+    vb.width *= k; vb.height *= k;
+  }, { passive: false });
+  let dragging = false;
+  svg.addEventListener("pointerdown", e => {
+    dragging = true;
+    svg.setPointerCapture(e.pointerId);
+    svg.style.cursor = "grabbing";
+  });
+  svg.addEventListener("pointermove", e => {
+    if (!dragging) return;
+    const vb = svg.viewBox.baseVal;
+    const scale = vb.width / svg.clientWidth;
+    vb.x -= e.movementX * scale;
+    vb.y -= e.movementY * scale;
+  });
+  svg.addEventListener("pointerup", e => {
+    dragging = false;
+    svg.releasePointerCapture(e.pointerId);
+    svg.style.cursor = "grab";
+  });
+  svg.addEventListener("dblclick", () => {
+    const vb = svg.viewBox.baseVal;
+    const o = svg.dataset.vb0.split(" ").map(Number);
+    vb.x = o[0]; vb.y = o[1]; vb.width = o[2]; vb.height = o[3];
+  });
+}
+function rememberViewBox(svg) {
+  svg.dataset.vb0 = svg.getAttribute("viewBox");
+  const o = svg.dataset.vb0.split(" ").map(Number);
+  const vb = svg.viewBox.baseVal;
+  vb.x = o[0]; vb.y = o[1]; vb.width = o[2]; vb.height = o[3];
+}
+
 function drawConvergence() {
   const svg = $("convergence");
   svg.innerHTML = "";
@@ -123,6 +209,8 @@ function drawConvergence() {
 
 function renderSolution(sol) {
   $("dashboard").classList.remove("hidden");
+  const solName = sol.instance + (sol.withMaintenance ? "-mnt" : "");
+  $("xlsxBtn").href = `/api/solutions/${encodeURIComponent(solName)}/itinerary.xlsx`;
   renderKpis(sol);
   renderMap(sol);
   renderTimeSpace(sol);
@@ -162,8 +250,9 @@ function renderTimeSpace(sol) {
   const rowOf = Object.fromEntries(rowsIds.map((id, i) => [id, i]));
 
   const rowH = 22, m = { l: 64, r: 10, t: 24, b: 8 };
-  const W = 1400, H = m.t + rowsIds.length * rowH + m.b;
+  const W = 3200, H = m.t + rowsIds.length * rowH + m.b; // wide horizontal axis
   svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.style.width = W + "px";
   svg.setAttribute("height", Math.min(520, H));
   const X = t => m.l + (W - m.l - m.r) * t / N;
   const Y = row => m.t + row * rowH + rowH / 2;
@@ -206,7 +295,9 @@ function renderTimeSpace(sol) {
     }
   }
   $("tsNote").textContent = ` ${rowsIds.length} aeropuertos más activos` +
-    (skipped ? `, ${skipped} legs fuera de vista` : "");
+    (skipped ? `, ${skipped} legs fuera de vista` : "") + " — rueda: zoom, arrastrar: mover";
+  rememberViewBox(svg);
+  makeZoomable(svg);
 }
 
 function renderKpis(sol) {
@@ -306,6 +397,9 @@ function renderMap(sol) {
     if (a.hub)
       svgEl(svg, "text", { x: X(a.lon) + 9, y: Y(a.lat) + 4, fill: "#f0d35e", "font-size": 11, "font-weight": 600 }, a.code);
   }
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  rememberViewBox(svg);
+  makeZoomable(svg);
 }
 
 function renderGantt(sol) {

@@ -33,9 +33,9 @@ public sealed class SolveJobManager
 
     public SolveJob? Get(string id) => _jobs.GetValueOrDefault(id);
 
-    public SolveJob Start(SolveRequest req)
+    public SolveJob Start(SolveRequest req, Instance? prebuilt = null)
     {
-        var inst = InstanceGenerator.Generate(req.Airline, req.Set, req.Seed);
+        var inst = prebuilt ?? InstanceGenerator.Generate(req.Airline, req.Set, req.Seed);
         var job = new SolveJob
         {
             Id = $"{DateTime.UtcNow:yyyyMMdd-HHmmss}-{Guid.NewGuid().ToString("N")[..6]}",

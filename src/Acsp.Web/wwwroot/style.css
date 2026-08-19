@@ -77,3 +77,7 @@ th { color: var(--muted); font-weight: 500; position: sticky; top: 0; background
 tr.dim td { color: var(--muted); }
 .bar { display: inline-block; height: 8px; background: var(--accent); border-radius: 3px;
   vertical-align: middle; }
+.actions { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; }
+.btn-link { background: var(--panel2); color: var(--text); border: 1px solid var(--grid);
+  border-radius: 6px; padding: 5px 10px; font-size: 13px; text-decoration: none; }
+.btn-link:hover { border-color: var(--accent); }
