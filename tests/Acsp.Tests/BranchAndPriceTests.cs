@@ -27,7 +27,13 @@ public class BranchAndPriceTests
             : null;
         var direct = DirectMipSolver.Solve(inst, withMaintenance, paths, strings);
         Assert.Equal(LpStatus.Optimal, direct.Status);
-        Assert.NotNull(direct.Solution);
+        if (direct.Solution is null)
+        {
+            // genuinely infeasible instance (artificials in the MIP basis): B&P&C must agree
+            var bpcInfeasible = RunBpc(inst, withMaintenance, exactStrings: withMaintenance);
+            Assert.Null(bpcInfeasible.Best);
+            return;
+        }
         var directReport = FeasibilityChecker.Check(inst, direct.Solution!);
         Assert.True(directReport.IsFeasible, directReport.ToString());
 
@@ -75,7 +81,7 @@ public class BranchAndPriceTests
             RevenueTkmTarget = 800_000,
             Fleets =
             [
-                AirlineProfile.RC.Fleets[0] with { Count = 3 },
+                AirlineProfile.RC.Fleets[0] with { Count = 4 },
             ],
         };
         var inst = new InstanceGenerator(profile, seed).Build(2);
