@@ -10,8 +10,45 @@ return args switch
     ["generate", .. var rest] => Generate(rest),
     ["solve", .. var rest] => SolveCmd(rest),
     ["benchmark", .. var rest] => Benchmark(rest),
+    ["diag", .. var rest] => Diag(rest),
     _ => Usage(),
 };
+
+static int Diag(string[] a)
+{
+    var inst = a[0].EndsWith(".json")
+        ? InstanceJson.Load(a[0])
+        : InstanceGenerator.Generate(a[0], int.Parse(a[1]), int.Parse(a[2]));
+    bool mnt = Flag(a, "maintenance");
+    using var rmp = new Rmp(inst, mnt, Acsp.Solver.Lp.LpSolverFactory.Create());
+    rmp.SeedTrivialStrings();
+    var colgen = new ColumnGeneration(inst, rmp, new ColGenOptions());
+    var result = colgen.SolveNode(PricingRestrictions.AllowAll(inst));
+    Console.WriteLine($"root LP: {result.Lp.Status}, obj {result.Lp.Objective:F0}, " +
+        $"artificials {rmp.ArtificialUsage(result.Lp):F3}");
+    // which artificials are active?
+    var duals = rmp.GetDuals(result.Lp);
+    var uncovered = new List<string>();
+    foreach (var f in inst.CargoFlights)
+    {
+        double cover = rmp.Strings.Where(sc => sc.Str.FlightIds.Contains(f.Id))
+            .Sum(sc => result.Lp.ColumnValues[sc.Col]);
+        if (f.IsMandatory && cover < 0.999)
+            uncovered.Add($"{f.Code} (cover {cover:F2}, fleets: " + string.Join('/',
+                inst.Fleets.Where(k => inst.Compatible(k.Id, f.Id)).Select(k => k.Code)) + ")");
+    }
+    Console.WriteLine($"mandatory flights not fully covered: {uncovered.Count}");
+    foreach (var u in uncovered.Take(15)) Console.WriteLine("  " + u);
+    // fleet usage
+    for (int k = 0; k < inst.Fleets.Length; k++)
+    {
+        double used = rmp.Strings.Where(sc => sc.Str.FleetId == k)
+            .Sum(sc => result.Lp.ColumnValues[sc.Col] * sc.Chi);
+        Console.WriteLine($"fleet {inst.Fleets[k].Code}: ~{used:F1} strings crossing count time, " +
+            $"available {inst.Fleets[k].Count}");
+    }
+    return 0;
+}
 
 static int Usage()
 {

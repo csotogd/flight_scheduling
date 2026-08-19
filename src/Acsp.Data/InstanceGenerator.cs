@@ -113,10 +113,27 @@ public sealed class InstanceGenerator
     private void BuildFlightPool()
     {
         int total = _p.MandatoryFlights + _p.OptionalFlightsSetII;
+        int optHalf = _p.OptionalFlightsSetII / 2;
+        FlightDraft? pendingMirror = null;
         for (int i = 0; i < total; i++)
         {
-            var draft = TryBuildRoute($"{_p.Code}{i + 1:D4}") ??
-                        BuildFallbackRoundTrip($"{_p.Code}{i + 1:D4}");
+            string code = $"{_p.Code}{i + 1:D4}";
+            FlightDraft draft;
+            if (pendingMirror is not null)
+            {
+                draft = pendingMirror with { Code = code };
+                pendingMirror = null;
+            }
+            else
+            {
+                // inter-hub routes must come in mirrored pairs (flow balance per fleet/airport
+                // requires as many departures as arrivals); a pair may not straddle the
+                // mandatory/optional boundary or the set-I optional cutoff
+                bool allowPair = i + 1 < total
+                    && i != _p.MandatoryFlights - 1
+                    && i != _p.MandatoryFlights + optHalf - 1;
+                (draft, pendingMirror) = BuildRouteOrPair(code, allowPair);
+            }
             if (i < _p.MandatoryFlights)
                 _mandatoryPool.Add(draft with { Mandatory = true });
             else
@@ -124,21 +141,38 @@ public sealed class InstanceGenerator
         }
     }
 
-    /// <summary>Builds one multi-leg route hub -> stops -> hub with per-leg range checks.</summary>
-    private FlightDraft? TryBuildRoute(string code)
+    private (FlightDraft Draft, FlightDraft? Mirror) BuildRouteOrPair(string code, bool allowPair)
     {
+        double maxRange = _p.Fleets.Max(f => f.RangeKm);
+        if (allowPair && _p.HubCodes.Length > 1 && _rng.NextDouble() < _p.InterHubRouteProb)
+        {
+            var s = AirportDb.Get(_p.HubCodes[_rng.Next(_p.HubCodes.Length)]);
+            var e = AirportDb.Get(_p.HubCodes[_rng.Next(_p.HubCodes.Length)]);
+            if (e.Code != s.Code && GreatCircle.Km(s, e) <= maxRange * 1.9)
+            {
+                var outbound = TryBuildRoute(code, s, e, out var route);
+                if (outbound is not null && route is not null)
+                {
+                    // mirror flies the same stops in reverse (out-and-back): identical leg
+                    // distances keep the forced-fleet classes balanced per direction
+                    var back = new List<AirportInfo>(route);
+                    back.Reverse();
+                    return (outbound, DraftFromRoute(code, back));
+                }
+            }
+        }
+        var hub = AirportDb.Get(_p.HubCodes[_rng.Next(_p.HubCodes.Length)]);
+        return (TryBuildRoute(code, hub, hub, out _) ?? BuildFallbackRoundTrip(code), null);
+    }
+
+    /// <summary>Builds one multi-leg route startHub -> stops -> endHub with per-leg range checks.</summary>
+    private FlightDraft? TryBuildRoute(string code, AirportInfo startHub, AirportInfo endHub,
+        out List<AirportInfo>? routeOut)
+    {
+        routeOut = null;
         double maxRange = _p.Fleets.Max(f => f.RangeKm);
         for (int attempt = 0; attempt < 60; attempt++)
         {
-            var startHub = AirportDb.Get(_p.HubCodes[_rng.Next(_p.HubCodes.Length)]);
-            var endHub = startHub;
-            if (_p.HubCodes.Length > 1 && _rng.NextDouble() < _p.InterHubRouteProb)
-            {
-                var other = AirportDb.Get(_p.HubCodes[_rng.Next(_p.HubCodes.Length)]);
-                if (other.Code != startHub.Code && GreatCircle.Km(startHub, other) <= maxRange * 1.9)
-                    endHub = other;
-            }
-
             int stops = _rng.Next(_p.MinStops, _p.MaxStops + 1);
             var route = new List<AirportInfo> { startHub };
             var pool = _cargoDests.Where(a => a.Code != startHub.Code && a.Code != endHub.Code).ToList();
@@ -160,6 +194,7 @@ public sealed class InstanceGenerator
             if (!ok) continue;
             if (GreatCircle.Km(route[^1], endHub) > maxRange) continue;
             route.Add(endHub);
+            routeOut = route;
             return DraftFromRoute(code, route);
         }
         return null;
