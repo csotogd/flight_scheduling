@@ -19,11 +19,16 @@ def table(rows):
         "| Set | 1ª entera: t (s) | 1ª entera: objetivo | Mejor objetivo | Cota | Gap | Nodos | Tiempo (s) | Parada |",
         "|---|---|---|---|---|---|---|---|---|",
     ]
+    def num(v):
+        f = float(v)
+        return "—" if f != f or f in (float("inf"), float("-inf")) else f"{int(f):,}"
+
     for r in rows:
         gap = float(r["gap"])
+        first_t = float(r["firstIncTime"])
         out.append(
-            f"| {r['set']} | {float(r['firstIncTime']):.1f} | {int(float(r['firstIncObj'])):,} "
-            f"| {int(float(r['bestObj'])):,} | {int(float(r['bound'])):,} | {gap:.2%} "
+            f"| {r['set']} | {'—' if first_t != first_t else f'{first_t:.1f}'} | {num(r['firstIncObj'])} "
+            f"| {num(r['bestObj'])} | {num(r['bound'])} | {'—' if gap != gap or gap > 1e6 else f'{gap:.2%}'} "
             f"| {r['nodes']} | {float(r['time']):.1f} | {r['stop']} |")
     return "\n".join(out)
 
