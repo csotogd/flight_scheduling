@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <ItemGroup>
+    <ProjectReference Include="..\Acsp.Core\Acsp.Core.csproj" />
+    <ProjectReference Include="..\Acsp.Data\Acsp.Data.csproj" />
+    <ProjectReference Include="..\Acsp.Solver\Acsp.Solver.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+</Project>

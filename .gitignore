@@ -1,0 +1,6 @@
+bin/
+obj/
+*.user
+instances/
+results/
+.DS_Store

@@ -1,0 +1,64 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{140D5846-6AD1-4D5D-996D-783FC00203B9}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Acsp.Core", "src\Acsp.Core\Acsp.Core.csproj", "{EB7788F0-8E08-48A6-B464-18AD576432BE}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Acsp.Data", "src\Acsp.Data\Acsp.Data.csproj", "{32E36AA5-BFF5-42FC-AE50-6AE24619C220}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Acsp.Solver", "src\Acsp.Solver\Acsp.Solver.csproj", "{02D3CFD3-211B-4BA9-96A4-DD3A54EC12E8}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Acsp.Cli", "src\Acsp.Cli\Acsp.Cli.csproj", "{7CD51D77-1B5B-45C2-80B2-F70EC3843EE0}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Acsp.Web", "src\Acsp.Web\Acsp.Web.csproj", "{4A80A1A6-49B7-4463-A3F8-6EDA160E139E}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{88039B60-EFE6-41D1-989F-1D92D0C52BA2}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Acsp.Tests", "tests\Acsp.Tests\Acsp.Tests.csproj", "{C038D5F6-EE56-43B0-9A27-81F4782082F8}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{EB7788F0-8E08-48A6-B464-18AD576432BE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{EB7788F0-8E08-48A6-B464-18AD576432BE}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{EB7788F0-8E08-48A6-B464-18AD576432BE}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{EB7788F0-8E08-48A6-B464-18AD576432BE}.Release|Any CPU.Build.0 = Release|Any CPU
+		{32E36AA5-BFF5-42FC-AE50-6AE24619C220}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{32E36AA5-BFF5-42FC-AE50-6AE24619C220}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{32E36AA5-BFF5-42FC-AE50-6AE24619C220}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{32E36AA5-BFF5-42FC-AE50-6AE24619C220}.Release|Any CPU.Build.0 = Release|Any CPU
+		{02D3CFD3-211B-4BA9-96A4-DD3A54EC12E8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{02D3CFD3-211B-4BA9-96A4-DD3A54EC12E8}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{02D3CFD3-211B-4BA9-96A4-DD3A54EC12E8}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{02D3CFD3-211B-4BA9-96A4-DD3A54EC12E8}.Release|Any CPU.Build.0 = Release|Any CPU
+		{7CD51D77-1B5B-45C2-80B2-F70EC3843EE0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7CD51D77-1B5B-45C2-80B2-F70EC3843EE0}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7CD51D77-1B5B-45C2-80B2-F70EC3843EE0}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7CD51D77-1B5B-45C2-80B2-F70EC3843EE0}.Release|Any CPU.Build.0 = Release|Any CPU
+		{4A80A1A6-49B7-4463-A3F8-6EDA160E139E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4A80A1A6-49B7-4463-A3F8-6EDA160E139E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4A80A1A6-49B7-4463-A3F8-6EDA160E139E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4A80A1A6-49B7-4463-A3F8-6EDA160E139E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C038D5F6-EE56-43B0-9A27-81F4782082F8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C038D5F6-EE56-43B0-9A27-81F4782082F8}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C038D5F6-EE56-43B0-9A27-81F4782082F8}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C038D5F6-EE56-43B0-9A27-81F4782082F8}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{EB7788F0-8E08-48A6-B464-18AD576432BE} = {140D5846-6AD1-4D5D-996D-783FC00203B9}
+		{32E36AA5-BFF5-42FC-AE50-6AE24619C220} = {140D5846-6AD1-4D5D-996D-783FC00203B9}
+		{02D3CFD3-211B-4BA9-96A4-DD3A54EC12E8} = {140D5846-6AD1-4D5D-996D-783FC00203B9}
+		{7CD51D77-1B5B-45C2-80B2-F70EC3843EE0} = {140D5846-6AD1-4D5D-996D-783FC00203B9}
+		{4A80A1A6-49B7-4463-A3F8-6EDA160E139E} = {140D5846-6AD1-4D5D-996D-783FC00203B9}
+		{C038D5F6-EE56-43B0-9A27-81F4782082F8} = {88039B60-EFE6-41D1-989F-1D92D0C52BA2}
+	EndGlobalSection
+EndGlobal
