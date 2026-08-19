@@ -47,6 +47,30 @@ static int Diag(string[] a)
         Console.WriteLine($"fleet {inst.Fleets[k].Code}: ~{used:F1} strings crossing count time, " +
             $"available {inst.Fleets[k].Count}");
     }
+
+    // demand servability analysis: why is demand left on the table?
+    var pricer = new PathPricer(inst);
+    var allowAll = PricingRestrictions.AllowAll(inst);
+    var probe = MasterDuals.Zero(inst);
+    var zero = MasterDuals.Zero(inst);
+    double tUnserv = 0, tUnprofitable = 0, tOk = 0;
+    int nUnserv = 0, nUnprofitable = 0, nOk = 0;
+    foreach (var od in inst.Ods)
+    {
+        probe.OdDemand[od.Id] = -1e9;
+        bool exists = pricer.PriceOd(od, probe, allowAll) is not null;
+        probe.OdDemand[od.Id] = 0;
+        if (!exists) { nUnserv++; tUnserv += od.Weight; continue; }
+        // profitable itinerary at zero duals (ignoring capacity competition)?
+        bool profitable = pricer.PriceOd(od, zero, allowAll) is not null;
+        if (!profitable) { nUnprofitable++; tUnprofitable += od.Weight; }
+        else { nOk++; tOk += od.Weight; }
+    }
+    double total = inst.Ods.Sum(o => o.Weight);
+    Console.WriteLine($"demand analysis over {inst.Ods.Length} ODs, {total:F0}t:");
+    Console.WriteLine($"  no feasible itinerary at all:      {nUnserv,5} ODs {tUnserv,9:F0}t ({tUnserv / total:P1})");
+    Console.WriteLine($"  itinerary exists but margin <= 0:  {nUnprofitable,5} ODs {tUnprofitable,9:F0}t ({tUnprofitable / total:P1})");
+    Console.WriteLine($"  profitably servable (pre-capacity):{nOk,5} ODs {tOk,9:F0}t ({tOk / total:P1})");
     return 0;
 }
 

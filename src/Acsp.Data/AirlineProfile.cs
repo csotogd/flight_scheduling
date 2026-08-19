@@ -25,7 +25,8 @@ public sealed record AirlineProfile(
     int MinDeliveryDays, int MaxDeliveryDays,
     double RevenueTkmTarget,       // weekly revenue tonne-km (Table 1)
     ExternalSpec? External,
-    int NumExternalDestinations)
+    int NumExternalDestinations,
+    double RateMultiplier = 1.0)  // express carriers charge a premium yield
 {
     public static readonly AirlineProfile RC = new(
         Code: "RC", HubCodes: ["HKG"], NumCargoDestinations: 23,
@@ -95,7 +96,8 @@ public sealed record AirlineProfile(
         MinStops: 1, MaxStops: 2, InterHubRouteProb: 0.12,
         NumOds: 6000, MinDeliveryDays: 1, MaxDeliveryDays: 3,
         RevenueTkmTarget: 119_806_624,
-        External: null, NumExternalDestinations: 0);
+        External: null, NumExternalDestinations: 0,
+        RateMultiplier: 2.2);
 
     public static AirlineProfile Get(string code) => code.ToUpperInvariant() switch
     {

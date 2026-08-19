@@ -293,7 +293,7 @@ public sealed class InstanceGenerator
             // lognormal-ish weight, median ~2t with a heavy tail
             double w = Math.Exp(0.7 + 1.0 * Gaussian());
             w = Math.Clamp(w, 0.1, 60);
-            double rate = 100 + dist * (0.28 + 0.22 * _rng.NextDouble());
+            double rate = (100 + dist * (0.28 + 0.22 * _rng.NextDouble())) * _p.RateMultiplier;
             int days = _rng.Next(_p.MinDeliveryDays, _p.MaxDeliveryDays + 1);
             int avail;
             if (depsByAirport.TryGetValue(o.Code, out var deps))

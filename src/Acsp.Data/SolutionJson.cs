@@ -40,6 +40,32 @@ public static class SolutionJson
         var odShipped = new double[inst.Ods.Length];
         foreach (var (path, tons) in sol.Flows) odShipped[path.OdId] += tons;
 
+        // Demand-at-risk diagnostics: which O&Ds have any feasible itinerary at all (full master
+        // flight list) and which have one in the selected schedule. Demand is an upper bound in
+        // the model (14), so unservable O&Ds never make the model infeasible — they surface here.
+        var pricer = new PathPricer(inst);
+        var allowAll = PricingRestrictions.AllowAll(inst);
+        var inSchedule = PricingRestrictions.AllowAll(inst);
+        foreach (var leg in inst.Legs)
+        {
+            var flight = inst.Flights[leg.FlightId];
+            bool available = flight.IsExternal
+                ? flight.ExternalFixedCost <= 0 || sol.SelectedExternalFlights.Contains(flight.Id)
+                : coveredBy[flight.Id] >= 0;
+            if (!available) inSchedule.LegVisible[leg.Id] = false;
+        }
+        var servable = new bool[inst.Ods.Length];
+        var servableInSchedule = new bool[inst.Ods.Length];
+        var existDuals = MasterDuals.Zero(inst);
+        foreach (var od in inst.Ods)
+        {
+            existDuals.OdDemand[od.Id] = -1e9; // feasibility probe: any path wins regardless of margin
+            servable[od.Id] = pricer.PriceOd(od, existDuals, allowAll) is not null;
+            servableInSchedule[od.Id] = servable[od.Id] &&
+                pricer.PriceOd(od, existDuals, inSchedule) is not null;
+            existDuals.OdDemand[od.Id] = 0;
+        }
+
         return new
         {
             instance = inst.Name,
@@ -114,7 +140,17 @@ public static class SolutionJson
                 id = od.Id, from = od.Origin, to = od.Destination,
                 demandT = od.Weight, shippedT = Math.Round(odShipped[od.Id], 3),
                 rate = od.Rate, avail = od.Avail, deadline = od.MaxDeliveryTime,
+                servable = servable[od.Id],
+                servableInSchedule = servableInSchedule[od.Id],
             }),
+            demandAtRisk = new
+            {
+                unservableOds = servable.Count(s => !s),
+                unservableTonnes = Math.Round(inst.Ods.Where(o => !servable[o.Id]).Sum(o => o.Weight), 1),
+                notInScheduleOds = inst.Ods.Count(o => servable[o.Id] && !servableInSchedule[o.Id]),
+                notInScheduleTonnes = Math.Round(
+                    inst.Ods.Where(o => servable[o.Id] && !servableInSchedule[o.Id]).Sum(o => o.Weight), 1),
+            },
             flows = sol.Flows.Select(f => new
             {
                 od = f.Path.OdId, legs = f.Path.LegIds, tonnes = Math.Round(f.Tonnes, 3),

@@ -7,10 +7,12 @@ const pct = n => n == null ? "—" : (100 * n).toFixed(2) + " %";
 
 let currentJob = null;
 let series = []; // {t, incumbent, bound}
+let worldPolys = []; // simplified country outlines [[lon,lat],...]
 
 init();
 
 async function init() {
+  fetch("world.json").then(r => r.json()).then(w => { worldPolys = w; }).catch(() => {});
   const profiles = await (await fetch("/api/profiles")).json();
   for (const a of profiles.airlines) {
     const o = document.createElement("option");
@@ -123,9 +125,88 @@ function renderSolution(sol) {
   $("dashboard").classList.remove("hidden");
   renderKpis(sol);
   renderMap(sol);
+  renderTimeSpace(sol);
   renderGantt(sol);
   renderOdTable(sol);
   renderFlightTable(sol);
+}
+
+/* Time-space network: airports on the y-axis, the week on the x-axis; every selected leg is a
+   diagonal arc from (dep, origin) to (arr, destination). Ground/waiting time is the horizontal
+   distance between consecutive arcs at an airport. */
+function renderTimeSpace(sol) {
+  const svg = $("timespace");
+  svg.innerHTML = "";
+  const N = sol.periodMinutes;
+  const ap = Object.fromEntries(sol.airports.map(a => [a.id, a]));
+
+  // rows: hubs first, then airports by activity in the selected schedule
+  const activity = {};
+  const activeLegs = [];
+  for (const f of sol.flights) {
+    if (!f.selected) continue;
+    const external = f.kind === "external";
+    for (const l of f.legs) {
+      if (external && l.loadT <= 0) continue;
+      activeLegs.push({ f, l, external });
+      activity[l.from] = (activity[l.from] || 0) + 1;
+      activity[l.to] = (activity[l.to] || 0) + 1;
+    }
+  }
+  const maxRows = 32;
+  const rowsIds = sol.airports
+    .filter(a => activity[a.id])
+    .sort((a, b) => (b.hub - a.hub) || (activity[b.id] - activity[a.id]))
+    .slice(0, maxRows)
+    .map(a => a.id);
+  const rowOf = Object.fromEntries(rowsIds.map((id, i) => [id, i]));
+
+  const rowH = 22, m = { l: 64, r: 10, t: 24, b: 8 };
+  const W = 1400, H = m.t + rowsIds.length * rowH + m.b;
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.setAttribute("height", Math.min(520, H));
+  const X = t => m.l + (W - m.l - m.r) * t / N;
+  const Y = row => m.t + row * rowH + rowH / 2;
+
+  const days = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
+  for (let d = 0; d < 7; d++) {
+    svgEl(svg, "line", { x1: X(d * 1440), x2: X(d * 1440), y1: m.t - 6, y2: H - m.b, stroke: "#2a3446", "stroke-width": .6 });
+    svgEl(svg, "text", { x: X(d * 1440 + 720), y: 13, fill: "#8494ab", "font-size": 10, "text-anchor": "middle" }, days[d]);
+  }
+  rowsIds.forEach((id, i) => {
+    svgEl(svg, "line", { x1: m.l, x2: W - m.r, y1: Y(i), y2: Y(i), stroke: "#232d3f", "stroke-width": .5 });
+    svgEl(svg, "text", { x: 6, y: Y(i) + 3, fill: ap[id].hub ? "#f0d35e" : "#8494ab", "font-size": 10,
+      "font-weight": ap[id].hub ? 700 : 400 }, ap[id].code);
+  });
+
+  let skipped = 0;
+  const colors = { mandatory: "#4da3ff", optional: "#46d68c", external: "#f0a35e" };
+  for (const { f, l, external } of activeLegs) {
+    const r1 = rowOf[l.from], r2 = rowOf[l.to];
+    if (r1 === undefined || r2 === undefined) { skipped++; continue; }
+    const arrAbs = l.arr >= l.dep ? l.arr : l.arr + N;
+    const color = external ? colors.external : colors[f.kind];
+    const width = external ? 1 : 1.4 + 1.6 * Math.min(1, l.capT ? l.loadT / l.capT : 0);
+    const seg = (t1, y1, t2, y2) => {
+      const line = svgEl(svg, "line", {
+        x1: X(t1), y1, x2: X(t2), y2, stroke: color, "stroke-width": width, opacity: .8,
+      });
+      if (external) line.setAttribute("stroke-dasharray", "4 3");
+      svgEl(line, "title", {},
+        `${f.code} ${ap[l.from].code}→${ap[l.to].code}  carga ${l.loadT}t/${l.capT}t`);
+    };
+    if (arrAbs <= N) {
+      seg(l.dep, Y(r1), arrAbs, Y(r2));
+    } else {
+      // leg wraps over the week boundary: split with interpolated y
+      const frac = (N - l.dep) / (arrAbs - l.dep);
+      const yMid = Y(r1) + (Y(r2) - Y(r1)) * frac;
+      seg(l.dep, Y(r1), N, yMid);
+      seg(0, yMid, arrAbs - N, Y(r2));
+    }
+  }
+  $("tsNote").textContent = ` ${rowsIds.length} aeropuertos más activos` +
+    (skipped ? `, ${skipped} legs fuera de vista` : "");
 }
 
 function renderKpis(sol) {
@@ -170,6 +251,15 @@ function renderMap(sol) {
     svgEl(svg, "line", { x1: X(lon), x2: X(lon), y1: 0, y2: H, stroke: "#222b3a", "stroke-width": .5 });
   for (let lat = Math.ceil(latMin / gridStep) * gridStep; lat <= latMax; lat += gridStep)
     svgEl(svg, "line", { x1: 0, x2: W, y1: Y(lat), y2: Y(lat), stroke: "#222b3a", "stroke-width": .5 });
+
+  // world landmass behind the network (clipped by the svg viewBox)
+  for (const poly of worldPolys) {
+    if (poly.every(p => p[0] < lonMin || p[0] > lonMax || p[1] < latMin || p[1] > latMax)) continue;
+    svgEl(svg, "path", {
+      d: "M " + poly.map(p => `${X(p[0]).toFixed(1)} ${Y(p[1]).toFixed(1)}`).join(" L ") + " Z",
+      fill: "#1b2433", stroke: "#2c3a52", "stroke-width": .7,
+    });
+  }
 
   const ap = Object.fromEntries(sol.airports.map(a => [a.id, a]));
   const styles = {
@@ -278,20 +368,32 @@ function renderOdTable(sol) {
   const shipped = sol.ods.reduce((a, o) => a + o.shippedT, 0);
   const demand = sol.ods.reduce((a, o) => a + o.demandT, 0);
   const served = sol.ods.filter(o => o.shippedT > 1e-6).length;
+  let riskTxt = "";
+  if (sol.demandAtRisk) {
+    const r = sol.demandAtRisk;
+    riskTxt = ` — sin ruta posible: ${r.unservableOds} O&Ds (${fmt1(r.unservableTonnes)} t); ` +
+      `sin ruta en este horario: ${r.notInScheduleOds} O&Ds (${fmt1(r.notInScheduleTonnes)} t)`;
+  }
   $("odSummary").textContent =
     ` ${fmt1(shipped)} / ${fmt1(demand)} t (${(100 * shipped / demand).toFixed(1)} %), ` +
-    `${served}/${sol.ods.length} O&Ds servidos`;
+    `${served}/${sol.ods.length} O&Ds servidos${riskTxt}`;
   const ap = Object.fromEntries(sol.airports.map(a => [a.id, a.code]));
-  const top = [...sol.ods].sort((a, b) => b.shippedT - a.shippedT).slice(0, 18);
+  // unservable demand first (planner attention), then largest shipped
+  const top = [...sol.ods]
+    .sort((a, b) => (a.servable === false ? -1 : 0) - (b.servable === false ? -1 : 0)
+      || b.shippedT - a.shippedT)
+    .slice(0, 18);
   $("odTable").innerHTML =
-    "<tr><th>O&D</th><th>demanda t</th><th>servido t</th><th>fill</th><th>rate $/t</th></tr>" +
+    "<tr><th>O&D</th><th>demanda t</th><th>servido t</th><th>fill</th><th>rate $/t</th><th>ruta</th></tr>" +
     top.map(o => {
       const fill = o.demandT ? o.shippedT / o.demandT : 0;
+      const route = o.servable === false ? "✖ sin ruta"
+        : o.servableInSchedule === false ? "⚠ no en horario" : "✓";
       return `<tr${o.shippedT < 1e-6 ? ' class="dim"' : ""}>
         <td>${ap[o.from]} → ${ap[o.to]}</td>
         <td>${fmt1(o.demandT)}</td><td>${fmt1(o.shippedT)}</td>
         <td><span class="bar" style="width:${Math.round(40 * fill)}px"></span> ${(100 * fill).toFixed(0)}%</td>
-        <td>${fmt(o.rate)}</td></tr>`;
+        <td>${fmt(o.rate)}</td><td>${route}</td></tr>`;
     }).join("");
 }
 

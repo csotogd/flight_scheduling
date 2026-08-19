@@ -36,14 +36,20 @@
 <section id="dashboard" class="hidden">
   <div id="kpis" class="kpi-row"></div>
 
-  <div class="panel">
-    <div class="panel-title">Red de vuelos <span class="legend">
-      <span class="lg lg-mand">mandatory</span>
-      <span class="lg lg-opt">optional (elegido)</span>
-      <span class="lg lg-rej">optional (descartado)</span>
-      <span class="lg lg-ext">external</span></span>
+  <div class="two-col wide">
+    <div class="panel">
+      <div class="panel-title">Red de vuelos <span class="legend">
+        <span class="lg lg-mand">mandatory</span>
+        <span class="lg lg-opt">optional (elegido)</span>
+        <span class="lg lg-rej">optional (descartado)</span>
+        <span class="lg lg-ext">external</span></span>
+      </div>
+      <svg id="map" viewBox="0 0 1000 480"></svg>
     </div>
-    <svg id="map" viewBox="0 0 1000 480"></svg>
+    <div class="panel">
+      <div class="panel-title">Red time-space (horario seleccionado) <span id="tsNote" class="sub"></span></div>
+      <div id="tsWrap"><svg id="timespace"></svg></div>
+    </div>
   </div>
 
   <div class="panel">
