@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ACSP — Air Cargo Scheduling</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>ACSP <span class="sub">Air cargo scheduling — Derigs &amp; Friederichs (2013)</span></h1>
+  <div class="controls">
+    <select id="airline"></select>
+    <select id="set">
+      <option value="1">Set I (táctico)</option>
+      <option value="2">Set II (más opcionales)</option>
+      <option value="3">Set III (estratégico)</option>
+    </select>
+    <label>seed <input id="seed" type="number" value="1" min="1" max="99"></label>
+    <label><input id="maintenance" type="checkbox"> mantenimiento</label>
+    <label>límite <input id="timeLimit" type="number" value="120" min="5" step="5"> s</label>
+    <button id="solveBtn">Resolver</button>
+    <select id="savedSolutions"><option value="">— soluciones guardadas —</option></select>
+  </div>
+</header>
+
+<section id="progressSection" class="hidden">
+  <div class="panel">
+    <div class="panel-title">Branch &amp; price &amp; cut <span id="jobName"></span>
+      <button id="cancelBtn" class="small">detener</button></div>
+    <div id="progressStats" class="stats-line">—</div>
+    <svg id="convergence" viewBox="0 0 860 200" preserveAspectRatio="none"></svg>
+  </div>
+</section>
+
+<section id="dashboard" class="hidden">
+  <div id="kpis" class="kpi-row"></div>
+
+  <div class="panel">
+    <div class="panel-title">Red de vuelos <span class="legend">
+      <span class="lg lg-mand">mandatory</span>
+      <span class="lg lg-opt">optional (elegido)</span>
+      <span class="lg lg-rej">optional (descartado)</span>
+      <span class="lg lg-ext">external</span></span>
+    </div>
+    <svg id="map" viewBox="0 0 1000 480"></svg>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">Rotaciones (Gantt semanal por rotación)</div>
+    <div id="ganttWrap"><svg id="gantt"></svg></div>
+  </div>
+
+  <div class="two-col">
+    <div class="panel">
+      <div class="panel-title">Demanda O&amp;D <span id="odSummary" class="sub"></span></div>
+      <table id="odTable"></table>
+    </div>
+    <div class="panel">
+      <div class="panel-title">Vuelos</div>
+      <table id="flightTable"></table>
+    </div>
+  </div>
+</section>
+
+<script src="app.js"></script>
+</body>
+</html>

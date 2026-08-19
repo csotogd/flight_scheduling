@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "acsp-web",
+      "runtimeExecutable": "/Users/carlossoto/.dotnet/dotnet",
+      "runtimeArgs": ["run", "--project", "src/Acsp.Web", "--no-launch-profile"],
+      "port": 5170
+    }
+  ]
+}

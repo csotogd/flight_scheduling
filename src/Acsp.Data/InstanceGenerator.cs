@@ -34,7 +34,10 @@ public sealed class InstanceGenerator
     {
         _p = profile;
         _seed = seed;
-        _rng = new Random(HashCode.Combine(profile.Code, seed));
+        // string.GetHashCode is randomized per process in .NET, so a stable hash is required
+        // for instances to be reproducible across runs
+        int code = profile.Code.Aggregate(17, (h, c) => h * 31 + c);
+        _rng = new Random(code * 1000 + seed);
         PickDestinations();
         BuildFlightPool();
         BuildExternalFlights();

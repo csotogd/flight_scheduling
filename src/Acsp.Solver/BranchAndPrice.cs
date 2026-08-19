@@ -74,9 +74,11 @@ public sealed class BranchAndPrice
                 Gap(incumbent, bound), rmp.Paths.Count, rmp.Strings.Count, rmp.CutCount,
                 sw.Elapsed.TotalSeconds, phase));
         }
+        double processingBound = double.PositiveInfinity; // bound of the node being processed
         double OpenBound()
         {
-            double b = stack.Count == 0 ? incumbent : stack.Max(s => s.InheritedBound);
+            double b = stack.Count == 0 ? processingBound : Math.Max(stack.Max(s => s.InheritedBound), processingBound);
+            if (double.IsPositiveInfinity(b) && stack.Count == 0) b = incumbent;
             return Math.Min(b, rootBound);
         }
         static double Gap(double inc, double bound)
@@ -114,6 +116,7 @@ public sealed class BranchAndPrice
 
             rmp.ApplyBranchingState(node.Restrictions, node.ForcedFlights, node.ForcedExternals,
                 node.FixedStrings);
+            processingBound = node.InheritedBound;
             var result = colgen.SolveNode(node.Restrictions, ct);
             nodesExplored++;
             var lp = result.Lp;
@@ -124,6 +127,7 @@ public sealed class BranchAndPrice
             if (rmp.ArtificialUsage(lp) > 1e-6)
             { Report("pruned (artificials in basis: infeasible)"); continue; }
             double nodeBound = Math.Min(lp.Objective, node.InheritedBound);
+            processingBound = nodeBound;
             if (!double.IsNegativeInfinity(incumbent) &&
                 nodeBound - incumbent <= Math.Abs(incumbent) * _opt.GapTarget)
             { Report("pruned (bound)"); continue; }
