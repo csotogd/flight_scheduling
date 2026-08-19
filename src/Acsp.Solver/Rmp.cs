@@ -39,6 +39,8 @@ public sealed class Rmp : IDisposable
 
     public IReadOnlyList<PathCol> Paths => _paths;
     public IReadOnlyList<StringCol> Strings => _strings;
+    /// <summary>Booking columns of external flights with fixed costs (flight id -> column).</summary>
+    public IReadOnlyDictionary<int, int> ExternalColumns => _extCol;
     public IReadOnlyList<(int Od, int Flight)> Cuts => _cuts;
     public int CutCount => _cuts.Count;
 
@@ -225,12 +227,18 @@ public sealed class Rmp : IDisposable
     /// </summary>
     public void ApplyBranchingState(PricingRestrictions rest,
         IReadOnlyDictionary<int, bool>? forcedFlights = null,
-        IReadOnlyDictionary<int, bool>? forcedExternals = null)
+        IReadOnlyDictionary<int, bool>? forcedExternals = null,
+        IReadOnlyDictionary<string, bool>? fixedStrings = null)
     {
         foreach (var pc in _paths)
             _lp.SetColumnBounds(pc.Col, 0, rest.Allows(pc.Path) ? Inf : 0);
         foreach (var sc in _strings)
-            _lp.SetColumnBounds(sc.Col, 0, rest.Allows(sc.Str) ? 1 : 0);
+        {
+            double lo = 0, hi = rest.Allows(sc.Str) ? 1 : 0;
+            if (fixedStrings is not null && fixedStrings.TryGetValue(sc.Str.Key(), out bool fixVal))
+            { lo = fixVal ? 1 : 0; hi = fixVal ? 1 : 0; }
+            _lp.SetColumnBounds(sc.Col, lo, hi);
+        }
         foreach (var f in _inst.CargoFlights)
         {
             double lo = f.IsMandatory ? 1 : 0, hi = 1;
