@@ -59,6 +59,11 @@ public sealed class BranchAndPrice
         int nodesExplored = 0;
         string stopReason = "tree exhausted";
 
+        colgen.IterationProgress += (iter, obj, added) =>
+            Progress?.Invoke(new BpcProgress(nodesExplored, -1, incumbent, obj,
+                double.NaN, rmp.Paths.Count, rmp.Strings.Count, rmp.CutCount,
+                sw.Elapsed.TotalSeconds, $"colgen iter {iter} (+{added} cols)"));
+
         var stack = new Stack<BranchState>();
         stack.Push(BranchState.Root(_inst));
 
@@ -116,6 +121,8 @@ public sealed class BranchAndPrice
 
             if (lp.Status == LpStatus.Infeasible) { Report("pruned (infeasible)"); continue; }
             if (lp.Status != LpStatus.Optimal) { Report($"node status {lp.Status}"); continue; }
+            if (rmp.ArtificialUsage(lp) > 1e-6)
+            { Report("pruned (artificials in basis: infeasible)"); continue; }
             double nodeBound = Math.Min(lp.Objective, node.InheritedBound);
             if (!double.IsNegativeInfinity(incumbent) &&
                 nodeBound - incumbent <= Math.Abs(incumbent) * _opt.GapTarget)

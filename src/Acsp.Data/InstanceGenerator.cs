@@ -231,18 +231,31 @@ public sealed class InstanceGenerator
             .GroupBy(x => x.Orig, x => x.Dep)
             .ToDictionary(g => g.Key, g => g.ToArray());
 
+        var hubs = _p.HubCodes.Select(AirportDb.Get).ToList();
         var raw = new List<OdDraft>();
         double sumTkm = 0;
         for (int i = 0; i < _p.NumOds; i++)
         {
-            var o = airports[_rng.Next(airports.Count)];
-            AirportInfo d;
-            do { d = airports[_rng.Next(airports.Count)]; } while (d.Code == o.Code);
+            // hub-and-spoke demand: most tonnage moves via a hub gateway, so with high
+            // probability one endpoint of the O&D is a hub (single-flight servable)
+            AirportInfo o, d;
+            if (_rng.NextDouble() < 0.65)
+            {
+                var hub = hubs[_rng.Next(hubs.Count)];
+                var other = airports[_rng.Next(airports.Count)];
+                while (other.Code == hub.Code) other = airports[_rng.Next(airports.Count)];
+                (o, d) = _rng.NextDouble() < 0.5 ? (hub, other) : (other, hub);
+            }
+            else
+            {
+                o = airports[_rng.Next(airports.Count)];
+                do { d = airports[_rng.Next(airports.Count)]; } while (d.Code == o.Code);
+            }
             double dist = GreatCircle.Km(o, d);
             // lognormal-ish weight, median ~2t with a heavy tail
             double w = Math.Exp(0.7 + 1.0 * Gaussian());
             w = Math.Clamp(w, 0.1, 60);
-            double rate = 80 + dist * (0.22 + 0.20 * _rng.NextDouble());
+            double rate = 100 + dist * (0.28 + 0.22 * _rng.NextDouble());
             int days = _rng.Next(_p.MinDeliveryDays, _p.MaxDeliveryDays + 1);
             int avail;
             if (depsByAirport.TryGetValue(o.Code, out var deps))

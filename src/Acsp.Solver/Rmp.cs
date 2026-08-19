@@ -36,6 +36,8 @@ public sealed class Rmp : IDisposable
     private readonly Dictionary<string, int> _stringIndex = [];
     private readonly Dictionary<int, int> _extCol = [];     // external flight id -> column
     private readonly List<(int Od, int Flight)> _cuts = [];
+    private readonly List<int> _artificialCols = [];
+    private const double BigM = 1e7;
 
     public IReadOnlyList<PathCol> Paths => _paths;
     public IReadOnlyList<StringCol> Strings => _strings;
@@ -91,6 +93,21 @@ public sealed class Rmp : IDisposable
                 : [_eventRow[g.FromEvent], _eventRow[g.ToEvent], _fleetRow[g.Fleet]];
             Span<double> coefs = g.FromEvent == g.ToEvent ? [g.Chi] : [1.0, -1.0, g.Chi];
             _lp.AddColumn(-_inst.Fleets[g.Fleet].FixedCostPerAircraft * g.Chi, 0, Inf, rows, coefs);
+        }
+
+        // artificial columns keep the RMP feasible while columns are still missing (colgen
+        // phase-1): cover rows may be satisfied and fleet rows relaxed at a large penalty.
+        foreach (var f in inst.CargoFlights)
+        {
+            Span<int> r = [_coverRow[f.Id]];
+            Span<double> c = [1.0];
+            _artificialCols.Add(_lp.AddColumn(-BigM, 0, 1, r, c));
+        }
+        foreach (var k in inst.Fleets)
+        {
+            Span<int> r = [_fleetRow[k.Id]];
+            Span<double> c = [-1.0];
+            _artificialCols.Add(_lp.AddColumn(-BigM, 0, Inf, r, c));
         }
 
         // booking variables for external flights with fixed costs (§4.1)
@@ -291,8 +308,13 @@ public sealed class Rmp : IDisposable
 
     // ---------------------------------------------------------------- solution extraction
 
+    /// <summary>Total artificial-column usage; above tolerance the node is truly infeasible.</summary>
+    public double ArtificialUsage(LpResult res) =>
+        _artificialCols.Sum(c => res.ColumnValues[c]);
+
     public bool IsIntegral(LpResult res, double tol = 1e-6)
     {
+        if (ArtificialUsage(res) > tol) return false;
         foreach (var sc in _strings)
         {
             double v = res.ColumnValues[sc.Col];

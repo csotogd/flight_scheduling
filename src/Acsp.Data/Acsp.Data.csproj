@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Acsp.Core\Acsp.Core.csproj" />
+    <ProjectReference Include="..\Acsp.Solver\Acsp.Solver.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

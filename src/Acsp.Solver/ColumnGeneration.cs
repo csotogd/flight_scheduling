@@ -50,6 +50,9 @@ public sealed class ColumnGeneration
 
     public sealed record NodeResult(LpResult Lp, ColGenStats Stats);
 
+    /// <summary>Fired after every pricing iteration: (iteration, lp objective, columns added).</summary>
+    public event Action<int, double, int>? IterationProgress;
+
     /// <summary>Solves the LP of the current node to (near) optimality via column generation.</summary>
     public NodeResult SolveNode(PricingRestrictions rest, CancellationToken ct = default)
     {
@@ -77,6 +80,7 @@ public sealed class ColumnGeneration
             foreach (var s in stringTask.Result)
                 if (_rmp.AddString(s.Str)) { added++; stringsAdded++; }
 
+            IterationProgress?.Invoke(pricingIters, lp.Objective, added);
             if (added > 0)
             {
                 lp = _rmp.SolveLp();
