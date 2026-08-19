@@ -100,7 +100,7 @@ static int SolveCmd(string[] a)
     bool mnt = Flag(a, "maintenance");
     double timeLimit = double.Parse(Opt(a, "time-limit", "1800"));
     double gap = double.Parse(Opt(a, "gap", "0.005"));
-    var res = RunOne(inst, mnt, timeLimit, gap, verbose: true);
+    var res = RunOne(inst, mnt, timeLimit, gap, verbose: true, noHeuristic: Flag(a, "no-heuristic"));
     string outDir = Opt(a, "out", "results");
     if (res.Best is not null)
     {
@@ -111,13 +111,15 @@ static int SolveCmd(string[] a)
     return res.Best is null ? 2 : 0;
 }
 
-static BpcResult RunOne(Instance inst, bool mnt, double timeLimit, double gap, bool verbose)
+static BpcResult RunOne(Instance inst, bool mnt, double timeLimit, double gap, bool verbose,
+    bool noHeuristic = false)
 {
     var bpc = new BranchAndPrice(inst, new BpcOptions
     {
         WithMaintenance = mnt,
         GapTarget = gap,
         TimeLimitSeconds = timeLimit,
+        MipHeuristicFrequency = noHeuristic ? 0 : 40,
     });
     var lastReport = DateTime.MinValue;
     bpc.Progress += p =>
