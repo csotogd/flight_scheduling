@@ -263,7 +263,8 @@ function renderTimeSpace(sol) {
   const rowOf = Object.fromEntries(rowsIds.map((id, i) => [id, i]));
 
   const rowH = 22, m = { l: 64, r: 10, t: 24, b: 8 };
-  const W = 3200, H = m.t + rowsIds.length * rowH + m.b; // wide horizontal axis
+  const dayW = 900; // horizontal pixels per day: legs stay readable diagonals, not bars
+  const W = m.l + 7 * dayW + m.r, H = m.t + rowsIds.length * rowH + m.b;
   svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
   // element size must match the viewBox aspect ratio, otherwise the default
   // xMidYMid letterboxing shifts the drawing away from the hit-test coordinates
@@ -287,14 +288,20 @@ function renderTimeSpace(sol) {
     flightAirports[f.id] = set;
   }
 
-  const legEls = [];   // {el, flightId, baseOpacity}
+  const legEls = [];   // {el, flightId, from, to, baseOpacity}
   const labelEls = {}; // airport id -> text element
 
   function applyStationFilter() {
     const sel = tsSelectedStation;
-    for (const { el, flightId, baseOpacity } of legEls)
-      el.setAttribute("opacity", sel == null ? baseOpacity
-        : flightAirports[flightId].has(sel) ? 0.95 : 0.06);
+    for (const { el, flightId, from, to, baseOpacity } of legEls) {
+      // legs arriving/departing at the station: full strength;
+      // remaining legs of the same flight: faint context; everything else: dimmed
+      const o = sel == null ? baseOpacity
+        : from === sel || to === sel ? 0.95
+        : flightAirports[flightId].has(sel) ? 0.25
+        : 0.05;
+      el.setAttribute("opacity", o);
+    }
     for (const [id, el] of Object.entries(labelEls)) {
       const on = sel != null && +id === sel;
       el.setAttribute("fill", on ? "#cc0000" : ap[id].hub ? "#cc0000" : "#555555");
@@ -339,7 +346,7 @@ function renderTimeSpace(sol) {
       if (external) line.setAttribute("stroke-dasharray", "4 3");
       svgEl(line, "title", {},
         `${f.code} ${ap[l.from].code}→${ap[l.to].code}  load ${l.loadT}t/${l.capT}t`);
-      legEls.push({ el: line, flightId: f.id, baseOpacity: 0.8 });
+      legEls.push({ el: line, flightId: f.id, from: l.from, to: l.to, baseOpacity: 0.8 });
     };
     if (arrAbs <= N) {
       seg(l.dep, Y(r1), arrAbs, Y(r2));
