@@ -71,6 +71,8 @@ tr.dim td { color: #999999; }
 .bar { display: inline-block; height: 8px; background: #0066cc; vertical-align: middle; }
 
 .actions { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
+.table-scroll { max-height: 420px; overflow: auto; }
+.filter { float: right; font-weight: normal; width: 200px; padding: 2px 5px; font-size: 12px; }
 .btn-link { background: #e8e8e8; color: #222222; border: 1px solid #999999;
   padding: 3px 8px; font-size: 13px; text-decoration: none; }
 .btn-link:hover { background: #d8d8d8; }

@@ -34,6 +34,78 @@ app.MapGet("/api/profiles", () => Results.Json(new
     sets = new[] { 1, 2, 3 },
 }));
 
+// raw model input for the instance-inspection screen
+app.MapGet("/api/instance", (string airline, int set, int seed) =>
+{
+    var inst = Acsp.Data.InstanceGenerator.Generate(airline, set, seed);
+    return Results.Json(new
+    {
+        name = inst.Name,
+        periodMinutes = inst.Period.N,
+        summary = new
+        {
+            airports = inst.Airports.Length,
+            hubs = inst.Airports.Count(a => a.IsTransferHub),
+            fleets = inst.Fleets.Length,
+            aircraft = inst.Fleets.Sum(k => k.Count),
+            mandatory = inst.MandatoryFlights.Count(),
+            optional = inst.OptionalFlights.Count(),
+            external = inst.ExternalFlights.Count(),
+            legs = inst.Legs.Length,
+            ods = inst.Ods.Length,
+            demandT = Math.Round(inst.Ods.Sum(o => o.Weight), 1),
+            demandVolM3 = Math.Round(inst.Ods.Sum(o => o.Volume), 0),
+        },
+        airports = inst.Airports.Select(a => new
+        {
+            code = a.Code, name = a.Name, hub = a.IsTransferHub,
+            minTransferMin = a.MinTransferTime,
+            transferCostPerT = a.TransferCostPerTonne,
+            storagePerTHour = a.StorageCostPerTonneHour,
+        }),
+        fleets = inst.Fleets.Select(k => new
+        {
+            code = k.Code, count = k.Count,
+            maxWeightT = k.MaxWeight, maxVolM3 = k.MaxVolume,
+            rangeKm = k.RangeKm, speedKmH = k.CruiseSpeedKmH,
+            fixedPerAircraftWeek = k.FixedCostPerAircraft,
+            groundMin = k.DefaultMinGroundTime,
+            mntCycles = k.MaxCyclesBetweenMaintenance,
+            mntFlightH = Math.Round(k.MaxFlightMinutesBetweenMaintenance / 60.0, 1),
+            mntElapsedDays = Math.Round(k.MaxElapsedMinutesBetweenMaintenance / 1440.0, 1),
+            mntDurationH = Math.Round(k.MaintenanceDuration / 60.0, 1),
+        }),
+        flights = inst.Flights.Select(f => new
+        {
+            code = f.Code,
+            kind = f.IsExternal ? "external" : f.IsMandatory ? "mandatory" : "optional",
+            route = string.Join(" → ", f.LegIds.Select(l => inst.Airports[inst.Legs[l].Origin].Code)
+                .Append(inst.Airports[inst.Legs[f.LegIds[^1]].Destination].Code)),
+            dep = inst.FlightDep(f),
+            arr = inst.FlightArr(f),
+            legs = f.NumLegs,
+            km = Math.Round(f.LegIds.Sum(l => inst.Legs[l].DistanceKm)),
+            minFixedCost = f.IsExternal
+                ? f.ExternalFixedCost
+                : Enumerable.Range(0, inst.Fleets.Length)
+                    .Where(k => inst.Compatible(k, f.Id))
+                    .Select(k => f.FixedCostByFleet[k]).DefaultIfEmpty(0).Min(),
+            capT = f.IsExternal ? inst.Legs[f.LegIds[0]].MaxWeight : (double?)null,
+        }),
+        ods = inst.Ods.Select(o => new
+        {
+            id = o.Id,
+            from = inst.Airports[o.Origin].Code,
+            to = inst.Airports[o.Destination].Code,
+            avail = o.Avail,
+            deadlineH = Math.Round(o.MaxDeliveryTime / 60.0, 1),
+            weightT = o.Weight,
+            volM3 = o.Volume,
+            ratePerT = o.Rate,
+        }),
+    });
+});
+
 app.MapGet("/api/jobs", (SolveJobManager jobs) => Results.Json(jobs.List()));
 
 app.MapPost("/api/solve", (SolveRequest req, SolveJobManager jobs) =>

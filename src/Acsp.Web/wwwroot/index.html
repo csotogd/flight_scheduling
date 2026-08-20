@@ -20,9 +20,40 @@
     <label><input id="maintenance" type="checkbox"> maintenance</label>
     <label>limit <input id="timeLimit" type="number" value="120" min="5" step="5"> s</label>
     <button id="solveBtn">Solve</button>
+    <button id="inputBtn">View input data</button>
     <select id="savedSolutions"><option value="">— saved solutions —</option></select>
   </div>
 </header>
+
+<section id="inputSection" class="hidden">
+  <div class="panel">
+    <div class="panel-title">Model input — <span id="inputName"></span>
+      <button id="inputCloseBtn" class="small">close</button></div>
+    <div id="inputSummary" class="kpi-row"></div>
+  </div>
+  <div class="two-col">
+    <div class="panel">
+      <div class="panel-title">Fleets</div>
+      <table id="inputFleets"></table>
+    </div>
+    <div class="panel">
+      <div class="panel-title">Airports</div>
+      <div class="table-scroll"><table id="inputAirports"></table></div>
+    </div>
+  </div>
+  <div class="two-col">
+    <div class="panel">
+      <div class="panel-title">Flights (master flight list)
+        <input id="flightFilter" class="filter" placeholder="filter: code / airport / kind"></div>
+      <div class="table-scroll"><table id="inputFlights"></table></div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">O&amp;D demand
+        <input id="odFilter" class="filter" placeholder="filter: airport code"></div>
+      <div class="table-scroll"><table id="inputOds"></table></div>
+    </div>
+  </div>
+</section>
 
 <section id="progressSection" class="hidden">
   <div class="panel">

@@ -23,6 +23,8 @@ async function init() {
   $("solveBtn").onclick = startSolve;
   $("cancelBtn").onclick = () => currentJob && fetch(`/api/jobs/${currentJob}/cancel`, { method: "POST" });
   $("proposeBtn").onclick = proposeAndResolve;
+  $("inputBtn").onclick = showInput;
+  $("inputCloseBtn").onclick = () => $("inputSection").classList.add("hidden");
   $("savedSolutions").onchange = async e => {
     if (!e.target.value) return;
     const sol = await (await fetch(`/api/solutions/${e.target.value}`)).json();
@@ -40,6 +42,79 @@ async function refreshSaved() {
     o.value = s.name; o.textContent = s.name;
     sel.appendChild(o);
   }
+}
+
+const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const fmtTime = t =>
+  `${DAYS[Math.floor(t / 1440) % 7]} ${String(Math.floor(t % 1440 / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`;
+
+/* Model-input inspection screen: everything the optimizer receives. */
+async function showInput() {
+  const req = formRequest();
+  $("inputBtn").disabled = true;
+  try {
+    const d = await (await fetch(
+      `/api/instance?airline=${req.airline}&set=${req.set}&seed=${req.seed}`)).json();
+    $("inputSection").classList.remove("hidden");
+    $("inputName").textContent = d.name +
+      ` — weekly periodic schedule, ${d.periodMinutes.toLocaleString()} min horizon`;
+    const s = d.summary;
+    const kpis = [
+      ["Airports", `${s.airports} (${s.hubs} hubs)`],
+      ["Fleet types", s.fleets], ["Aircraft", s.aircraft],
+      ["Mandatory flights", s.mandatory], ["Optional flights", s.optional],
+      ["External flights", s.external], ["Legs", s.legs],
+      ["O&Ds", s.ods], ["Total demand", fmt1(s.demandT) + " t"],
+    ];
+    $("inputSummary").innerHTML = kpis.map(([l, v]) =>
+      `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div></div>`).join("");
+
+    $("inputFleets").innerHTML =
+      "<tr><th>fleet</th><th>a/c</th><th>max t</th><th>max m³</th><th>range km</th>" +
+      "<th>fixed $/a-c/wk</th><th>ground min</th><th>mnt cycles</th><th>mnt flight h</th>" +
+      "<th>mnt elapsed d</th><th>mnt stop h</th></tr>" +
+      d.fleets.map(k => `<tr><td>${k.code}</td><td>${k.count}</td><td>${k.maxWeightT}</td>
+        <td>${k.maxVolM3}</td><td>${fmt(k.rangeKm)}</td><td>${fmt(k.fixedPerAircraftWeek)}</td>
+        <td>${k.groundMin}</td><td>${k.mntCycles}</td><td>${k.mntFlightH}</td>
+        <td>${k.mntElapsedDays}</td><td>${k.mntDurationH}</td></tr>`).join("");
+
+    $("inputAirports").innerHTML =
+      "<tr><th>code</th><th>name</th><th>hub</th><th>min transfer</th><th>transfer $/t</th><th>storage $/t/h</th></tr>" +
+      d.airports.map(a => `<tr${a.hub ? "" : ' class=""'}><td>${a.code}</td><td>${a.name}</td>
+        <td>${a.hub ? "yes" : ""}</td><td>${a.hub ? a.minTransferMin + " min" : "—"}</td>
+        <td>${a.hub ? a.transferCostPerT : "—"}</td><td>${a.hub ? a.storagePerTHour : "—"}</td></tr>`).join("");
+
+    const renderFlights = () => {
+      const q = $("flightFilter").value.trim().toUpperCase();
+      const rows = d.flights.filter(f => !q ||
+        f.code.toUpperCase().includes(q) || f.route.includes(q) || f.kind.toUpperCase().includes(q));
+      $("inputFlights").innerHTML =
+        `<tr><th>flight</th><th>kind</th><th>route</th><th>dep</th><th>arr</th>` +
+        `<th>legs</th><th>km</th><th>fixed cost $</th><th>cap t</th></tr>` +
+        rows.slice(0, 1200).map(f => `<tr${f.kind === "optional" ? ' class="dim"' : ""}>
+          <td>${f.code}</td><td>${f.kind}</td><td>${f.route}</td>
+          <td>${fmtTime(f.dep)}</td><td>${fmtTime(f.arr)}</td><td>${f.legs}</td>
+          <td>${fmt(f.km)}</td><td>${fmt(f.minFixedCost)}</td>
+          <td>${f.capT != null ? f.capT : "fleet"}</td></tr>`).join("") +
+        (rows.length > 1200 ? `<tr><td colspan="9">… ${rows.length - 1200} more (use the filter)</td></tr>` : "");
+    };
+    const renderOds = () => {
+      const q = $("odFilter").value.trim().toUpperCase();
+      const rows = d.ods.filter(o => !q || o.from.includes(q) || o.to.includes(q));
+      $("inputOds").innerHTML =
+        `<tr><th>#</th><th>O&D</th><th>available</th><th>deadline h</th>` +
+        `<th>weight t</th><th>vol m³</th><th>rate $/t</th></tr>` +
+        rows.slice(0, 1200).map(o => `<tr><td>${o.id}</td><td>${o.from} → ${o.to}</td>
+          <td>${fmtTime(o.avail)}</td><td>${o.deadlineH}</td><td>${fmt1(o.weightT)}</td>
+          <td>${fmt1(o.volM3)}</td><td>${fmt(o.ratePerT)}</td></tr>`).join("") +
+        (rows.length > 1200 ? `<tr><td colspan="7">… ${rows.length - 1200} more (use the filter)</td></tr>` : "");
+    };
+    $("flightFilter").oninput = renderFlights;
+    $("odFilter").oninput = renderOds;
+    renderFlights();
+    renderOds();
+    $("inputSection").scrollIntoView({ block: "start" });
+  } finally { $("inputBtn").disabled = false; }
 }
 
 function formRequest() {
@@ -263,7 +338,7 @@ function renderTimeSpace(sol) {
   const rowOf = Object.fromEntries(rowsIds.map((id, i) => [id, i]));
 
   const rowH = 22, m = { l: 64, r: 10, t: 24, b: 8 };
-  const dayW = 900; // horizontal pixels per day: legs stay readable diagonals, not bars
+  const dayW = 1400; // horizontal pixels per day: legs stay readable diagonals, not bars
   const W = m.l + 7 * dayW + m.r, H = m.t + rowsIds.length * rowH + m.b;
   svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
   // element size must match the viewBox aspect ratio, otherwise the default
