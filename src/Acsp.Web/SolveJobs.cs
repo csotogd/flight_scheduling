@@ -56,6 +56,7 @@ public sealed class SolveJobManager
                 WithMaintenance = job.Request.Maintenance,
                 GapTarget = job.Request.GapTarget,
                 TimeLimitSeconds = job.Request.TimeLimitSeconds,
+                MipHeuristicTimeLimit = Math.Max(20, inst.Flights.Length / 12),
             });
             var lastEvent = DateTime.MinValue;
             bpc.Progress += p =>

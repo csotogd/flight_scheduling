@@ -144,6 +144,8 @@ static BpcResult RunOne(Instance inst, bool mnt, double timeLimit, double gap, b
         GapTarget = gap,
         TimeLimitSeconds = timeLimit,
         MipHeuristicFrequency = noHeuristic ? 0 : 40,
+        // large instances need a bigger MIP-heuristic budget to produce the first incumbent
+        MipHeuristicTimeLimit = Math.Max(20, inst.Flights.Length / 12),
     });
     var lastReport = DateTime.MinValue;
     bpc.Progress += p =>
@@ -188,10 +190,11 @@ static int Benchmark(string[] a)
     double gap = double.Parse(Opt(a, "gap", "0.005"));
     string outDir = Opt(a, "out", "results");
     Directory.CreateDirectory(outDir);
-    var csv = new List<string>
-    {
-        "set,seed,maintenance,firstIncTime,firstIncObj,bestObj,bound,gap,nodes,time,stop",
-    };
+    // append to an existing benchmark csv instead of overwriting it
+    string csvPath = Path.Combine(outDir, $"benchmark{(mnt ? "-mnt" : "")}.csv");
+    var csv = new List<string> { "set,seed,maintenance,firstIncTime,firstIncObj,bestObj,bound,gap,nodes,time,stop" };
+    if (File.Exists(csvPath))
+        csv.AddRange(File.ReadAllLines(csvPath).Skip(1).Where(l => l.Trim().Length > 0));
     foreach (var al in airlines)
         foreach (var st in sets)
             for (int seed = 1; seed <= seeds; seed++)
@@ -208,8 +211,7 @@ static int Benchmark(string[] a)
                     res.NodesExplored,
                     res.ElapsedSeconds.ToString("F1"),
                     res.StopReason));
-                File.WriteAllLines(Path.Combine(outDir,
-                    $"benchmark{(mnt ? "-mnt" : "")}.csv"), csv);
+                File.WriteAllLines(csvPath, csv);
                 if (res.Best is not null)
                     SolutionJson.Save(inst, res, Path.Combine(outDir,
                         inst.Name + (mnt ? "-mnt" : "") + ".solution.json"));

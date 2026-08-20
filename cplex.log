@@ -1,0 +1,27 @@
+
+Log started (V22.2.0.0) Thu Aug 20 17:28:21 2026
+
+No problem exists.
+
+Log started (V22.2.0.0) Thu Aug 20 17:28:30 2026
+
+
+Problem '/private/tmp/claude-501/-Users-carlossoto-derigs/4384ff0a-0076-4062-8548-b5b2180510bd/scratchpad/test.lp' read.
+Read time = 0.00 sec. (0.00 ticks)
+Version identifier: 22.2.0.0 | 2026-05-04 | 5dff98e58
+Tried aggregator 1 time.
+No LP presolve or aggregator reductions.
+Presolve time = 0.00 sec. (0.00 ticks)
+
+Iteration log . . .
+Iteration:     1   Dual infeasibility =             0.000000
+Iteration:     2   Dual objective     =            12.000000
+
+Dual simplex - Optimal:  Objective =  1.2000000000e+01
+Solution time =    0.00 sec.  Iterations = 2 (1)
+Deterministic time = 0.00 ticks  (2.18 ticks/sec)
+
+
+Variable Name           Solution Value
+x                             4.000000
+All other variables in the range 1-2 are 0.
