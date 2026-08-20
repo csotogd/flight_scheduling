@@ -9,6 +9,8 @@ let currentJob = null;
 let series = []; // {t, incumbent, bound}
 let worldPolys = []; // simplified country outlines [[lon,lat],...]
 let tsSelectedStation = null; // time-space: highlight flights touching this airport id
+let mapLegEls = [];           // map legs with their times, for the hourly scrubber
+let mapPeriodN = 10080;
 
 init();
 
@@ -25,6 +27,11 @@ async function init() {
   $("proposeBtn").onclick = proposeAndResolve;
   $("inputBtn").onclick = showInput;
   $("inputCloseBtn").onclick = () => $("inputSection").classList.add("hidden");
+  $("mapHourMode").onchange = () => {
+    $("mapHour").disabled = !$("mapHourMode").checked;
+    applyMapHour();
+  };
+  $("mapHour").oninput = applyMapHour;
   $("savedSolutions").onchange = async e => {
     if (!e.target.value) return;
     const sol = await (await fetch(`/api/solutions/${e.target.value}`)).json();
@@ -47,6 +54,30 @@ async function refreshSaved() {
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const fmtTime = t =>
   `${DAYS[Math.floor(t / 1440) % 7]} ${String(Math.floor(t % 1440 / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`;
+
+/* Hourly scrubber on the network map: show only legs airborne (>= 1 min) in the chosen hour. */
+function applyMapHour() {
+  const hourly = $("mapHourMode").checked;
+  if (!hourly) {
+    $("mapHourLabel").textContent = "all week (aggregated)";
+    for (const { el, baseOpacity } of mapLegEls) el.setAttribute("opacity", baseOpacity);
+    return;
+  }
+  const h0 = +$("mapHour").value * 60, h1 = h0 + 60;
+  $("mapHourLabel").textContent =
+    `${fmtTime(h0)} – ${String(Math.floor((h1 % 1440) / 60)).padStart(2, "0")}:00`;
+  let airborne = 0;
+  for (const { el, dep, arrAbs, baseOpacity } of mapLegEls) {
+    // overlap of [dep, arrAbs) with the hour window, also shifted a week for wrap-around legs
+    const ov = Math.max(
+      Math.min(arrAbs, h1) - Math.max(dep, h0),
+      Math.min(arrAbs, h1 + mapPeriodN) - Math.max(dep, h0 + mapPeriodN));
+    const on = ov >= 1;
+    if (on) airborne++;
+    el.setAttribute("opacity", on ? Math.max(0.85, +baseOpacity) : 0);
+  }
+  $("mapHourLabel").textContent += `  (${airborne} legs airborne)`;
+}
 
 /* Model-input inspection screen: everything the optimizer receives. */
 async function showInput() {
@@ -472,6 +503,8 @@ function renderKpis(sol) {
 function renderMap(sol) {
   const svg = $("map");
   svg.innerHTML = "";
+  mapLegEls = [];
+  mapPeriodN = sol.periodMinutes;
   const W = 1000, H = 480;
   // fit the airport bounding box (with padding) into the viewport, preserving aspect
   const lons = sol.airports.map(a => a.lon), lats = sol.airports.map(a => a.lat);
@@ -520,7 +553,10 @@ function renderMap(sol) {
       });
       if (st.dash) p.setAttribute("stroke-dasharray", st.dash);
       svgEl(p, "title", {},
-        `${a.code} → ${b.code}  ${Math.round(l.km)} km  load ${l.loadT} t / cap ${l.capT} t`);
+        `${a.code} → ${b.code}  ${Math.round(l.km)} km  load ${l.loadT} t / cap ${l.capT} t  ` +
+        `${fmtTime(l.dep)}→${fmtTime(l.arr)}`);
+      mapLegEls.push({ el: p, dep: l.dep,
+        arrAbs: l.arr >= l.dep ? l.arr : l.arr + mapPeriodN, baseOpacity: st.op });
     };
     draw(x1, x2, 0);
     if (x1 > W || x2 > W) draw(x1, x2, W);
@@ -554,6 +590,7 @@ function renderMap(sol) {
   svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
   rememberViewBox(svg);
   makeZoomable(svg);
+  applyMapHour(); // keep the hourly scrubber state across re-renders
 }
 
 function renderGantt(sol) {

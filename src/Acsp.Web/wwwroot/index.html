@@ -85,6 +85,11 @@
         <span class="lg lg-rej">optional (rejected)</span>
         <span class="lg lg-ext">external</span></span>
       </div>
+      <div class="map-controls">
+        <label><input type="checkbox" id="mapHourMode"> hourly view</label>
+        <input type="range" id="mapHour" min="0" max="167" value="96" step="1" disabled>
+        <span id="mapHourLabel">all week (aggregated)</span>
+      </div>
       <svg id="map" viewBox="0 0 1000 480"></svg>
     </div>
     <div class="panel">
