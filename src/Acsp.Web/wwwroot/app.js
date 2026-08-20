@@ -75,13 +75,13 @@ async function proposeAndResolve() {
 function renderProposals(data) {
   $("proposalsPanel").classList.remove("hidden");
   $("proposalsSummary").textContent =
-    `demanda sin ruta: ${data.unservableBefore} O&Ds (${fmt1(data.tonnesBefore)} t) → ` +
-    `tras propuestas: ${data.unservableAfter} O&Ds (${fmt1(data.tonnesAfter)} t) sin cubrir. ` +
-    `Los ${data.proposals.length} vuelos propuestos entran como OPCIONALES: el optimizador decide.`;
+    `unroutable demand: ${data.unservableBefore} O&Ds (${fmt1(data.tonnesBefore)} t) → ` +
+    `after proposals: ${data.unservableAfter} O&Ds (${fmt1(data.tonnesAfter)} t) still unreachable. ` +
+    `The ${data.proposals.length} proposed flights enter as OPTIONAL: the optimizer decides.`;
   $("proposalsTable").innerHTML =
-    "<tr><th>vuelo</th><th>ruta</th><th>salida hub</th><th>para</th><th>t objetivo</th><th>motivo</th></tr>" +
+    "<tr><th>flight</th><th>route</th><th>hub departure</th><th>for</th><th>target t</th><th>reason</th></tr>" +
     data.proposals.map(p => {
-      const days = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
+      const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
       const t = `${days[Math.floor(p.depMinute / 1440) % 7]} ${String(Math.floor(p.depMinute % 1440 / 60)).padStart(2, "0")}:${String(p.depMinute % 60).padStart(2, "0")}`;
       return `<tr><td>${p.code}</td><td>${p.route.join(" → ")}</td><td>${t}</td>
         <td>${p.targetPair}</td><td>${fmt1(p.targetTonnes)}</td><td>${p.reason}</td></tr>`;
@@ -99,9 +99,9 @@ function followJob(job) {
     const e = JSON.parse(ev.data);
     if (e.type === "progress") {
       $("progressStats").textContent =
-        `t ${e.t}s   nodos ${e.nodes}   incumbente ${fmt(e.incumbent)}   ` +
-        `cota ${fmt(e.bound)}   gap ${e.gap != null ? pct(e.gap) : "—"}   ` +
-        `columnas ${e.cols}   cortes ${e.cuts}   ${e.phase}`;
+        `t ${e.t}s   nodes ${e.nodes}   incumbent ${fmt(e.incumbent)}   ` +
+        `bound ${fmt(e.bound)}   gap ${e.gap != null ? pct(e.gap) : "—"}   ` +
+        `columns ${e.cols}   cuts ${e.cuts}   ${e.phase}`;
       if (e.incumbent != null || e.bound != null)
         series.push({ t: e.t, incumbent: e.incumbent, bound: e.bound });
       drawConvergence();
@@ -112,7 +112,7 @@ function followJob(job) {
         renderSolution(sol);
         refreshSaved();
       } else {
-        $("progressStats").textContent = "sin solución: " + (e.error || "error");
+        $("progressStats").textContent = "no solution: " + (e.error || "error");
       }
     }
   };
@@ -201,8 +201,8 @@ function drawConvergence() {
   };
   line("bound", "#f0a35e");
   line("incumbent", "#46d68c");
-  svgEl(svg, "text", { x: W - 12, y: 14, fill: "#f0a35e", "font-size": 10, "text-anchor": "end" }, "cota superior");
-  svgEl(svg, "text", { x: W - 12, y: 26, fill: "#46d68c", "font-size": 10, "text-anchor": "end" }, "incumbente");
+  svgEl(svg, "text", { x: W - 12, y: 14, fill: "#f0a35e", "font-size": 10, "text-anchor": "end" }, "upper bound");
+  svgEl(svg, "text", { x: W - 12, y: 26, fill: "#46d68c", "font-size": 10, "text-anchor": "end" }, "incumbent");
 }
 
 // ------------------------------------------------------------------ dashboard
@@ -257,7 +257,7 @@ function renderTimeSpace(sol) {
   const X = t => m.l + (W - m.l - m.r) * t / N;
   const Y = row => m.t + row * rowH + rowH / 2;
 
-  const days = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
+  const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
   for (let d = 0; d < 7; d++) {
     svgEl(svg, "line", { x1: X(d * 1440), x2: X(d * 1440), y1: m.t - 6, y2: H - m.b, stroke: "#2a3446", "stroke-width": .6 });
     svgEl(svg, "text", { x: X(d * 1440 + 720), y: 13, fill: "#8494ab", "font-size": 10, "text-anchor": "middle" }, days[d]);
@@ -282,7 +282,7 @@ function renderTimeSpace(sol) {
       });
       if (external) line.setAttribute("stroke-dasharray", "4 3");
       svgEl(line, "title", {},
-        `${f.code} ${ap[l.from].code}→${ap[l.to].code}  carga ${l.loadT}t/${l.capT}t`);
+        `${f.code} ${ap[l.from].code}→${ap[l.to].code}  load ${l.loadT}t/${l.capT}t`);
     };
     if (arrAbs <= N) {
       seg(l.dep, Y(r1), arrAbs, Y(r2));
@@ -294,8 +294,8 @@ function renderTimeSpace(sol) {
       seg(0, yMid, arrAbs - N, Y(r2));
     }
   }
-  $("tsNote").textContent = ` ${rowsIds.length} aeropuertos más activos` +
-    (skipped ? `, ${skipped} legs fuera de vista` : "") + " — rueda: zoom, arrastrar: mover";
+  $("tsNote").textContent = ` ${rowsIds.length} busiest airports` +
+    (skipped ? `, ${skipped} legs out of view` : "") + " — wheel: zoom, drag: pan";
   rememberViewBox(svg);
   makeZoomable(svg);
 }
@@ -307,15 +307,15 @@ function renderKpis(sol) {
   const totalCosts = sol.pnl.variableCosts + sol.pnl.fixedFlightCosts +
     sol.pnl.aircraftCosts + sol.pnl.externalCosts;
   const kpis = [
-    ["Beneficio semanal", "$" + fmt(sol.pnl.profit), sol.pnl.profit >= 0 ? "pos" : "neg"],
-    ["Ingresos", "$" + fmt(sol.pnl.revenue)],
-    ["Costes totales", "$" + fmt(totalCosts)],
-    ["Carga transportada", fmt1(shipped) + " t"],
-    ["Demanda servida", (100 * shipped / demand).toFixed(1) + " %"],
-    ["Aviones", aircraft],
+    ["Weekly profit", "$" + fmt(sol.pnl.profit), sol.pnl.profit >= 0 ? "pos" : "neg"],
+    ["Revenue", "$" + fmt(sol.pnl.revenue)],
+    ["Total costs", "$" + fmt(totalCosts)],
+    ["Cargo shipped", fmt1(shipped) + " t"],
+    ["Demand served", (100 * shipped / demand).toFixed(1) + " %"],
+    ["Aircraft", aircraft],
     ["Gap", pct(sol.stats.gap)],
-    ["Nodos B&B", fmt(sol.stats.nodes)],
-    ["Tiempo", fmt1(sol.stats.seconds) + " s"],
+    ["B&B nodes", fmt(sol.stats.nodes)],
+    ["Time", fmt1(sol.stats.seconds) + " s"],
   ];
   $("kpis").innerHTML = kpis.map(([l, v, cls]) =>
     `<div class="kpi"><div class="l">${l}</div><div class="v ${cls || ""}">${v}</div></div>`).join("");
@@ -372,7 +372,7 @@ function renderMap(sol) {
       });
       if (st.dash) p.setAttribute("stroke-dasharray", st.dash);
       svgEl(p, "title", {},
-        `${a.code} → ${b.code}  ${Math.round(l.km)} km  carga ${l.loadT} t / cap ${l.capT} t`);
+        `${a.code} → ${b.code}  ${Math.round(l.km)} km  load ${l.loadT} t / cap ${l.capT} t`);
     };
     draw(x1, x2, 0);
     if (x1 > W || x2 > W) draw(x1, x2, W);
@@ -413,7 +413,7 @@ function renderGantt(sol) {
   svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
   svg.setAttribute("height", H);
   const X = t => m.l + (W - m.l - m.r) * t / N;
-  const days = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
+  const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
   for (let d = 0; d < 7; d++) {
     svgEl(svg, "line", { x1: X(d * 1440), x2: X(d * 1440), y1: m.t - 8, y2: H, stroke: "#2a3446", "stroke-width": .6 });
     svgEl(svg, "text", { x: X(d * 1440 + 720), y: 14, fill: "#8494ab", "font-size": 10, "text-anchor": "middle" }, days[d]);
@@ -426,7 +426,7 @@ function renderGantt(sol) {
   rows.forEach((r, i) => {
     const y = m.t + i * rowH;
     svgEl(svg, "text", { x: 6, y: y + 15, fill: "#8494ab", "font-size": 10 },
-      `${r.fleet} rot.${r.id + 1} (${r.aircraft} av.)`);
+      `${r.fleet} rot.${r.id + 1} (${r.aircraft} a/c)`);
     for (const s of r.strings) {
       for (const fid of s.flightIds) {
         const f = flightById[fid];
@@ -447,7 +447,7 @@ function renderGantt(sol) {
         const mnt = svgEl(svg, "rect", {
           x: X(s.arr), y: y + 4, width: 5, height: rowH - 10, fill: "#f06a6a",
         });
-        svgEl(mnt, "title", {}, "parada de mantenimiento");
+        svgEl(mnt, "title", {}, "maintenance stop");
       }
     }
   });
@@ -465,12 +465,12 @@ function renderOdTable(sol) {
   let riskTxt = "";
   if (sol.demandAtRisk) {
     const r = sol.demandAtRisk;
-    riskTxt = ` — sin ruta posible: ${r.unservableOds} O&Ds (${fmt1(r.unservableTonnes)} t); ` +
-      `sin ruta en este horario: ${r.notInScheduleOds} O&Ds (${fmt1(r.notInScheduleTonnes)} t)`;
+    riskTxt = ` — no possible route: ${r.unservableOds} O&Ds (${fmt1(r.unservableTonnes)} t); ` +
+      `no route in this schedule: ${r.notInScheduleOds} O&Ds (${fmt1(r.notInScheduleTonnes)} t)`;
   }
   $("odSummary").textContent =
     ` ${fmt1(shipped)} / ${fmt1(demand)} t (${(100 * shipped / demand).toFixed(1)} %), ` +
-    `${served}/${sol.ods.length} O&Ds servidos${riskTxt}`;
+    `${served}/${sol.ods.length} O&Ds served${riskTxt}`;
   const ap = Object.fromEntries(sol.airports.map(a => [a.id, a.code]));
   // unservable demand first (planner attention), then largest shipped
   const top = [...sol.ods]
@@ -478,11 +478,11 @@ function renderOdTable(sol) {
       || b.shippedT - a.shippedT)
     .slice(0, 18);
   $("odTable").innerHTML =
-    "<tr><th>O&D</th><th>demanda t</th><th>servido t</th><th>fill</th><th>rate $/t</th><th>ruta</th></tr>" +
+    "<tr><th>O&D</th><th>demand t</th><th>shipped t</th><th>fill</th><th>rate $/t</th><th>route</th></tr>" +
     top.map(o => {
       const fill = o.demandT ? o.shippedT / o.demandT : 0;
-      const route = o.servable === false ? "✖ sin ruta"
-        : o.servableInSchedule === false ? "⚠ no en horario" : "✓";
+      const route = o.servable === false ? "✖ no route"
+        : o.servableInSchedule === false ? "⚠ not in schedule" : "✓";
       return `<tr${o.shippedT < 1e-6 ? ' class="dim"' : ""}>
         <td>${ap[o.from]} → ${ap[o.to]}</td>
         <td>${fmt1(o.demandT)}</td><td>${fmt1(o.shippedT)}</td>
@@ -501,10 +501,10 @@ function renderFlightTable(sol) {
     .sort((a, b) => (b.f.selected - a.f.selected) || b.maxLoad - a.maxLoad)
     .slice(0, 22);
   $("flightTable").innerHTML =
-    "<tr><th>vuelo</th><th>tipo</th><th>flota</th><th>legs</th><th>load factor</th></tr>" +
+    "<tr><th>flight</th><th>kind</th><th>fleet</th><th>legs</th><th>load factor</th></tr>" +
     rows.map(({ f, maxLoad }) =>
       `<tr${f.selected ? "" : ' class="dim"'}>
-        <td>${f.code}</td><td>${f.kind}${f.selected ? "" : " (no)"}</td>
+        <td>${f.code}</td><td>${f.kind}${f.selected ? "" : " (not flown)"}</td>
         <td>${f.fleet || "—"}</td><td>${f.legs.length}</td>
         <td><span class="bar" style="width:${Math.round(40 * Math.min(1, maxLoad))}px"></span>
           ${(100 * maxLoad).toFixed(0)}%</td></tr>`).join("");

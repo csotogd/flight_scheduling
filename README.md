@@ -1,89 +1,88 @@
 # ACSP — Air Cargo Scheduling
 
-Implementación en C#/.NET 8 del paper:
+C#/.NET 8 implementation of the paper:
 
 > Ulrich Derigs, Stefan Friederichs — **"Air cargo scheduling: integrated models and solution
 > procedures"**, OR Spectrum (2013) 35:325–362, DOI 10.1007/s00291-012-0299-y.
 
-El *Air Cargo Scheduling Problem* (ACSP) integra cuatro subproblemas de una aerolínea de carga
-sobre un horario semanal periódico (N = 10.080 min):
+The *Air Cargo Scheduling Problem* (ACSP) integrates four subproblems of a cargo airline over
+a periodic weekly schedule (N = 10,080 min):
 
-1. **Selección de vuelos** — qué vuelos opcionales añadir al horario (paradigma pragmático:
-   se parte de un horario existente con vuelos *mandatory* y candidatos *optional*).
-2. **Fleet assignment** — qué tipo de flota opera cada vuelo.
-3. **Rotation planning** — rotaciones cíclicas factibles por flota, con restricciones de
-   mantenimiento (A-checks) vía *flight strings* (Barnhart et al. 1998).
-4. **Cargo routing** — qué demanda O&D transportar por qué itinerarios (modelo path-flow).
+1. **Flight selection** — which optional flights to add to the schedule (pragmatic paradigm:
+   start from an existing schedule with *mandatory* flights and *optional* candidates).
+2. **Fleet assignment** — which fleet type operates each flight.
+3. **Rotation planning** — feasible cyclic rotations per fleet, with maintenance (A-check)
+   constraints via *flight strings* (Barnhart et al. 1998).
+4. **Cargo routing** — which O&D demand to carry over which itineraries (path-flow model).
 
-Todo se resuelve de forma integrada con el modelo **ACSP-T** (§3.4) mediante
+Everything is solved in an integrated fashion with model **ACSP-T** (§3.4) via
 **branch-and-price-and-cut** (§5–§8).
 
-## Estructura
+## Structure
 
-| Proyecto | Contenido |
+| Project | Contents |
 |---|---|
-| `src/Acsp.Core` | Dominio: tiempo periódico, aeropuertos/flotas/legs/vuelos/O&Ds, factibilidad de paths (§3.1.8) y flight strings (§3.1.9), `Solution` + `FeasibilityChecker` independiente (FA-*/RP-*/CR-*) |
-| `src/Acsp.Data` | Generador de instancias sintéticas (§9.1–9.2, Tablas 1–2): aerolíneas RC/IC/MI/EX × sets I/II/III; IO JSON |
-| `src/Acsp.Solver` | `TimelineNetwork` (§3.2), `Rmp` (filas (14)–(22) + cortes), `PathPricer` (PRICE-P: RCSPP con A*, §6.1), `StringPricer` (PRICE-S: DAG multi-semana con recursos, σ=20 y *bucket ordering*, §6.2), `ImpliedBoundCuts` (§8), `Branching` (§7), `BranchAndPrice` (Fig. 3), `SolutionAssembler`, `DirectMipSolver` (baseline), backends LP (`HighsSolver`, hueco `CplexSolver`) |
+| `src/Acsp.Core` | Domain: periodic time, airports/fleets/legs/flights/O&Ds, feasibility of paths (§3.1.8) and flight strings (§3.1.9), `Solution` + independent `FeasibilityChecker` (FA-*/RP-*/CR-*) |
+| `src/Acsp.Data` | Synthetic instance generator (§9.1–9.2, Tables 1–2): airlines RC/IC/MI/EX × sets I/II/III; JSON IO |
+| `src/Acsp.Solver` | `TimelineNetwork` (§3.2), `Rmp` (rows (14)–(22) + cuts), `PathPricer` (PRICE-P: RCSPP with A*, §6.1), `StringPricer` (PRICE-S: multi-week DAG with resources, σ=20 and *bucket ordering*, §6.2), `ImpliedBoundCuts` (§8), `Branching` (§7), `BranchAndPrice` (Fig. 3), `SolutionAssembler`, `DirectMipSolver` (baseline), `FlightProposer` (planner assistant), LP backends (`HighsSolver`, `CplexSolver` stub) |
 | `src/Acsp.Cli` | `generate` / `solve` / `benchmark` / `diag` |
-| `src/Acsp.Web` | Web app local: API + SSE + dashboard (mapa de red, Gantt de rotaciones, O&Ds, P&L, convergencia en vivo) |
-| `tests/Acsp.Tests` | 88 tests xUnit (ver Verificación) |
+| `src/Acsp.Web` | Local web app: API + SSE + dashboard (world map with the network, time-space network, rotation Gantt, O&Ds with demand-at-risk report, P&L, live convergence, flight proposer, Excel itinerary export) |
+| `tests/Acsp.Tests` | 88 xUnit tests (see Verification) |
 
-## Requisitos
+## Requirements
 
-- .NET 8 SDK (`~/.dotnet` vía `dotnet-install.sh` o Homebrew)
-- HiGHS: `brew install highs` (se carga `libhighs.dylib` por P/Invoke; ruta configurable con
-  `ACSP_LIBHIGHS`)
-- Opcional: IBM CPLEX Studio ≥ 22.1.1 — el backend se selecciona con
-  `ACSP_LP_BACKEND=cplex` cuando se cablee `CplexSolver` (pendiente de instalación local).
+- .NET 8 SDK (`~/.dotnet` via `dotnet-install.sh` or Homebrew)
+- HiGHS: `brew install highs` (loaded from `libhighs.dylib` via P/Invoke; path configurable
+  with `ACSP_LIBHIGHS`)
+- Optional: IBM CPLEX Studio ≥ 22.1.1 — the backend is selected with
+  `ACSP_LP_BACKEND=cplex` once `CplexSolver` is wired up (pending local installation).
 
-## Uso
+## Usage
 
 ```bash
 # tests
 dotnet test
 
-# generar las 60 instancias del paper (4 aerolíneas x 3 sets x 5 semillas)
+# generate the 60 instances of the paper (4 airlines x 3 sets x 5 seeds)
 dotnet run --project src/Acsp.Cli -c Release -- generate --airline all --set all --seeds 5
 
-# resolver una instancia (sin mantenimiento; añadir --maintenance para FARP-TS)
+# solve an instance (without maintenance; add --maintenance for FARP-TS)
 dotnet run --project src/Acsp.Cli -c Release -- solve instances/RC-I-s1.json --time-limit 600
 
-# benchmark tipo Tabla 3
+# Table-3-style benchmark
 dotnet run --project src/Acsp.Cli -c Release -- benchmark --airlines RC,IC,MI,EX --sets 1,2,3 \
   --seeds 1 --time-limit 600 --out results
 
-# web app en http://localhost:5170
+# web app at http://localhost:5170
 dotnet run --project src/Acsp.Web
 ```
 
-## Verificación
+## Verification
 
-- **Pricers vs fuerza bruta**: PRICE-P y PRICE-S (en modo exacto) reproducen el mejor reduced
-  cost de la enumeración exhaustiva sobre instancias pequeñas con duales aleatorios y cortes.
-- **Column generation exacta**: el LP por generación de columnas coincide con el LP con *todas*
-  las columnas pre-generadas para CRP-P aislado, FARP-T/FARP-TS aislado y el modelo integrado.
-- **B&P&C vs MIP directo**: el branch-and-price-and-cut alcanza el óptimo del MIP con columnas
-  pre-generadas (bloque 1 de la Tabla 3) en instancias artesanales y generadas, con y sin
-  mantenimiento.
-- **`FeasibilityChecker`**: verificador independiente de todas las restricciones del §2.2.4
-  que se ejecuta sobre cada incumbente aceptado (el solver lanza excepción si emite una
-  solución infactible).
+- **Pricers vs brute force**: PRICE-P and PRICE-S (in exact mode) reproduce the best reduced
+  cost of exhaustive enumeration on small instances with random duals and cuts.
+- **Exact column generation**: the column-generation LP matches the LP with *all* columns
+  pre-generated for CRP-P alone, FARP-T/FARP-TS alone, and the integrated model.
+- **B&P&C vs direct MIP**: branch-and-price-and-cut reaches the optimum of the MIP with
+  pre-generated columns (block 1 of Table 3) on hand-built and generated instances, with and
+  without maintenance.
+- **`FeasibilityChecker`**: independent verifier of every constraint in §2.2.4, executed on
+  each accepted incumbent (the solver throws if it ever emits an infeasible solution).
 
-Como en el paper, el procedimiento es **exacto sin restricciones de mantenimiento** y
-**aproximado con ellas** (el límite de labels σ del pricing de strings hace que la cota del
-LP no sea válida en teoría; §9 usa la misma variante aproximada).
+As in the paper, the procedure is **exact without maintenance constraints** and
+**approximate with them** (the label limit σ of string pricing means the LP bound is not a
+theoretical guarantee; §9 uses the same approximate variant).
 
-## Diferencias con el paper
+## Differences from the paper
 
-- Solver LP: HiGHS (open source) en lugar de CPLEX 12.1; la interfaz `ILpSolver` permite
-  enchufar CPLEX como backend alternativo.
-- Heurística primal adicional: MIP sobre las columnas generadas (incumbentes tempranos).
-  Los mecanismos del paper (branching específico, cortes, DFS 1-branch primero) están
-  implementados tal cual.
-- Las instancias son sintéticas pero calibradas a la Tabla 1/2 (tamaños de red, flotas,
-  demanda en TKM); los valores objetivo absolutos no son comparables con la Tabla 3.
+- LP solver: HiGHS (open source) instead of CPLEX 12.1; the `ILpSolver` interface allows
+  plugging CPLEX in as an alternative backend.
+- Additional primal heuristic: MIP over the generated columns (early incumbents). The
+  paper's mechanisms (problem-specific branching, cuts, DFS 1-branch first) are implemented
+  as described.
+- Instances are synthetic but calibrated to Tables 1/2 (network sizes, fleets, demand in
+  TKM); absolute objective values are not comparable with Table 3.
 
-## Resultados
+## Results
 
-Ver [results/RESULTS.md](results/RESULTS.md) (generado con el benchmark; CSVs en `results/`).
+See [results/RESULTS.md](results/RESULTS.md) (generated by the benchmark; CSVs in `results/`).

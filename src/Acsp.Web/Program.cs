@@ -107,7 +107,7 @@ app.MapGet("/api/solutions/{name}/itinerary.xlsx", (string name) =>
     using var doc = JsonDocument.Parse(File.ReadAllText(path));
     var root = doc.RootElement;
     int N = root.GetProperty("periodMinutes").GetInt32();
-    var days = new[] { "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom" };
+    var days = new[] { "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun" };
     string T(int t) => $"{days[t / 1440 % 7]} {t % 1440 / 60:D2}:{t % 60:D2}";
     var apCode = root.GetProperty("airports").EnumerateArray()
         .ToDictionary(a => a.GetProperty("id").GetInt32(), a => a.GetProperty("code").GetString()!);
@@ -121,8 +121,8 @@ app.MapGet("/api/solutions/{name}/itinerary.xlsx", (string name) =>
             legOwner[l.GetProperty("id").GetInt32()] = (f.GetProperty("code").GetString()!, l);
 
     var rotRows = new List<object?[]>();
-    rotRows.Add(new object?[] { "Rotación", "Flota", "Aviones", "Vuelo", "Origen", "Destino",
-        "Salida", "Llegada", "Carga t", "Cap t" });
+    rotRows.Add(new object?[] { "Rotation", "Fleet", "Aircraft", "Flight", "From", "To",
+        "Departure", "Arrival", "Load t", "Cap t" });
     foreach (var r in root.GetProperty("rotations").EnumerateArray())
     {
         var rot = $"R{r.GetProperty("id").GetInt32() + 1}";
@@ -141,8 +141,8 @@ app.MapGet("/api/solutions/{name}/itinerary.xlsx", (string name) =>
     }
 
     var flowRows = new List<object?[]>();
-    flowRows.Add(new object?[] { "O&D", "Origen", "Destino", "Toneladas", "Ruta (vuelos)",
-        "Ruta (aeropuertos)", "Salida", "Llegada" });
+    flowRows.Add(new object?[] { "O&D", "From", "To", "Tonnes", "Route (flights)",
+        "Route (airports)", "Departure", "Arrival" });
     var ods = root.GetProperty("ods").EnumerateArray()
         .ToDictionary(o => o.GetProperty("id").GetInt32(), o => o);
     foreach (var fl in root.GetProperty("flows").EnumerateArray())
@@ -168,22 +168,22 @@ app.MapGet("/api/solutions/{name}/itinerary.xlsx", (string name) =>
     var stats = root.GetProperty("stats");
     var kpiRows = new List<object?[]>
     {
-        new object?[] { "Instancia", root.GetProperty("instance").GetString() },
-        new object?[] { "Beneficio", pnl.GetProperty("profit").GetDouble() },
-        new object?[] { "Ingresos", pnl.GetProperty("revenue").GetDouble() },
-        new object?[] { "Costes variables", pnl.GetProperty("variableCosts").GetDouble() },
-        new object?[] { "Costes fijos vuelos", pnl.GetProperty("fixedFlightCosts").GetDouble() },
-        new object?[] { "Costes aviones", pnl.GetProperty("aircraftCosts").GetDouble() },
+        new object?[] { "Instance", root.GetProperty("instance").GetString() },
+        new object?[] { "Profit", pnl.GetProperty("profit").GetDouble() },
+        new object?[] { "Revenue", pnl.GetProperty("revenue").GetDouble() },
+        new object?[] { "Variable costs", pnl.GetProperty("variableCosts").GetDouble() },
+        new object?[] { "Fixed flight costs", pnl.GetProperty("fixedFlightCosts").GetDouble() },
+        new object?[] { "Aircraft costs", pnl.GetProperty("aircraftCosts").GetDouble() },
         new object?[] { "Gap", stats.GetProperty("gap").GetDouble() },
-        new object?[] { "Nodos B&B", stats.GetProperty("nodes").GetInt32() },
-        new object?[] { "Segundos", stats.GetProperty("seconds").GetDouble() },
+        new object?[] { "B&B nodes", stats.GetProperty("nodes").GetInt32() },
+        new object?[] { "Seconds", stats.GetProperty("seconds").GetDouble() },
     };
 
     var bytes = XlsxWriter.Build(
-        ("Rotaciones", rotRows), ("Flujos OD", flowRows), ("KPIs", kpiRows));
+        ("Rotations", rotRows), ("OD flows", flowRows), ("KPIs", kpiRows));
     return Results.File(bytes,
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        name + "-itinerario.xlsx");
+        name + "-itinerary.xlsx");
 });
 
 // previously saved solutions on disk

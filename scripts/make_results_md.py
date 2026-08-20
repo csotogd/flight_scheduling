@@ -16,9 +16,10 @@ def read(path):
 
 def table(rows):
     out = [
-        "| Set | 1ª entera: t (s) | 1ª entera: objetivo | Mejor objetivo | Cota | Gap | Nodos | Tiempo (s) | Parada |",
+        "| Set | 1st integer: t (s) | 1st integer: objective | Best objective | Bound | Gap | Nodes | Time (s) | Stop |",
         "|---|---|---|---|---|---|---|---|---|",
     ]
+
     def num(v):
         f = float(v)
         return "—" if f != f or f in (float("inf"), float("-inf")) else f"{int(f):,}"
@@ -36,28 +37,28 @@ def table(rows):
 plain = read(results / "benchmark.csv")
 mnt = read(results / "benchmark-mnt.csv")
 
-md = ["""# Resultados computacionales
+md = ["""# Computational results
 
-Formato análogo a la Tabla 3 del paper. Instancias sintéticas (semilla 1) generadas con
-`acsp generate`; solver LP HiGHS 1.15; gap objetivo 0,5 %; hardware: Apple Silicon (arm64).
-Los valores absolutos no son comparables con el paper (instancias distintas), la estructura
-del experimento sí.
+Format analogous to Table 3 of the paper. Synthetic instances (seed 1) generated with
+`acsp generate`; LP solver HiGHS 1.15; gap target 0.5%; hardware: Apple Silicon (arm64).
+Absolute objective values are not comparable with the paper (different instances); the
+structure of the experiment is.
 
-## ACSP-T sin restricciones de mantenimiento (branch-and-price-and-cut exacto)
+## ACSP-T without maintenance constraints (exact branch-and-price-and-cut)
 """]
-md.append(table(plain) if plain else "_pendiente_")
+md.append(table(plain) if plain else "_pending_")
 md.append("""
-## ACSP-T + MC con mantenimiento (variante aproximada, como §9)
+## ACSP-T + MC with maintenance (approximate variant, as in §9)
 """)
-md.append(table(mnt) if mnt else "_pendiente_")
+md.append(table(mnt) if mnt else "_pending_")
 md.append("""
-Notas:
-- "tree exhausted" = óptimo demostrado dentro del gap objetivo.
-- Con mantenimiento el pricing de strings usa límite de labels σ=20 con *bucket ordering*
-  (§6.2), por lo que la cota no es una garantía teórica — igual que la variante aproximada
-  del paper. El `FeasibilityChecker` valida cada solución contra todas las restricciones.
-- EX con mantenimiento no se intenta por defecto: el paper tampoco encontró soluciones
-  enteras para EX+MC en 16–32 h (§9.3).
+Notes:
+- "tree exhausted" = optimality proven within the gap target.
+- With maintenance, string pricing uses the label limit σ=20 with *bucket ordering* (§6.2),
+  so the bound is not a theoretical guarantee — same as the approximate variant in the paper.
+  The `FeasibilityChecker` validates every solution against all constraints.
+- EX with maintenance is not attempted by default: the paper did not find integer solutions
+  for EX+MC within 16–32h either (§9.3).
 """)
 
 (results / "RESULTS.md").write_text("\n".join(md))

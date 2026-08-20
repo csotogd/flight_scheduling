@@ -104,18 +104,18 @@ public static class FlightProposer
                 bool pickup = h == d; // cargo boards at the spoke when the destination is the hub
                 int t = pickup ? p.Wrap(od.Avail + 240) : p.Wrap(od.Avail + 240);
                 ProposeRoundTrip(h, spoke, t, pickup, pair, tonnes,
-                    pickup ? "recogida directa al hub" : "entrega directa desde el hub");
+                    pickup ? "direct pickup to the hub" : "direct delivery from the hub");
             }
             else if (hub is not null)
             {
                 // two coordinated round trips: pick up at o, deliver at d via the hub
                 int pickupDep = p.Wrap(od.Avail + 240);
                 ProposeRoundTrip(hub.Id, o, pickupDep, pickup: true, pair, tonnes,
-                    $"recogida hacia hub {hub.Code}");
+                    $"pickup towards hub {hub.Code}");
                 int blockOh = (int)Math.Round(Dist(o, hub.Id) / 850.0 * 60) + 40;
                 int deliverDep = p.Wrap(pickupDep + blockOh + inst.Airports[hub.Id].MinTransferTime + 120);
                 ProposeRoundTrip(hub.Id, d, deliverDep, pickup: false, pair, tonnes,
-                    $"entrega desde hub {hub.Code}");
+                    $"delivery from hub {hub.Code}");
             }
         }
 

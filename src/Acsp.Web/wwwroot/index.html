@@ -12,68 +12,68 @@
   <div class="controls">
     <select id="airline"></select>
     <select id="set">
-      <option value="1">Set I (táctico)</option>
-      <option value="2">Set II (más opcionales)</option>
-      <option value="3">Set III (estratégico)</option>
+      <option value="1">Set I (tactical)</option>
+      <option value="2">Set II (more optionals)</option>
+      <option value="3">Set III (strategic)</option>
     </select>
     <label>seed <input id="seed" type="number" value="1" min="1" max="99"></label>
-    <label><input id="maintenance" type="checkbox"> mantenimiento</label>
-    <label>límite <input id="timeLimit" type="number" value="120" min="5" step="5"> s</label>
-    <button id="solveBtn">Resolver</button>
-    <select id="savedSolutions"><option value="">— soluciones guardadas —</option></select>
+    <label><input id="maintenance" type="checkbox"> maintenance</label>
+    <label>limit <input id="timeLimit" type="number" value="120" min="5" step="5"> s</label>
+    <button id="solveBtn">Solve</button>
+    <select id="savedSolutions"><option value="">— saved solutions —</option></select>
   </div>
 </header>
 
 <section id="progressSection" class="hidden">
   <div class="panel">
     <div class="panel-title">Branch &amp; price &amp; cut <span id="jobName"></span>
-      <button id="cancelBtn" class="small">detener</button></div>
+      <button id="cancelBtn" class="small">stop</button></div>
     <div id="progressStats" class="stats-line">—</div>
     <svg id="convergence" viewBox="0 0 860 200" preserveAspectRatio="none"></svg>
   </div>
 </section>
 
 <div id="proposalsPanel" class="panel hidden">
-  <div class="panel-title">Vuelos candidatos propuestos (módulo planner, fuera de la optimización)</div>
+  <div class="panel-title">Proposed candidate flights (planner module, outside the optimization)</div>
   <div id="proposalsSummary" class="stats-line"></div>
   <table id="proposalsTable"></table>
 </div>
 
 <section id="dashboard" class="hidden">
   <div class="actions">
-    <button id="proposeBtn">💡 Proponer vuelos para demanda sin ruta y reoptimizar</button>
-    <a id="xlsxBtn" class="btn-link" href="#" download>⬇ Descargar itinerario (Excel)</a>
+    <button id="proposeBtn">💡 Propose flights for unroutable demand and re-optimize</button>
+    <a id="xlsxBtn" class="btn-link" href="#" download>⬇ Download itinerary (Excel)</a>
   </div>
   <div id="kpis" class="kpi-row"></div>
 
   <div class="two-col wide">
     <div class="panel">
-      <div class="panel-title">Red de vuelos <span class="legend">
+      <div class="panel-title">Flight network <span class="legend">
         <span class="lg lg-mand">mandatory</span>
-        <span class="lg lg-opt">optional (elegido)</span>
-        <span class="lg lg-rej">optional (descartado)</span>
+        <span class="lg lg-opt">optional (selected)</span>
+        <span class="lg lg-rej">optional (rejected)</span>
         <span class="lg lg-ext">external</span></span>
       </div>
       <svg id="map" viewBox="0 0 1000 480"></svg>
     </div>
     <div class="panel">
-      <div class="panel-title">Red time-space (horario seleccionado) <span id="tsNote" class="sub"></span></div>
+      <div class="panel-title">Time-space network (selected schedule) <span id="tsNote" class="sub"></span></div>
       <div id="tsWrap"><svg id="timespace"></svg></div>
     </div>
   </div>
 
   <div class="panel">
-    <div class="panel-title">Rotaciones (Gantt semanal por rotación)</div>
+    <div class="panel-title">Rotations (weekly Gantt per rotation)</div>
     <div id="ganttWrap"><svg id="gantt"></svg></div>
   </div>
 
   <div class="two-col">
     <div class="panel">
-      <div class="panel-title">Demanda O&amp;D <span id="odSummary" class="sub"></span></div>
+      <div class="panel-title">O&amp;D demand <span id="odSummary" class="sub"></span></div>
       <table id="odTable"></table>
     </div>
     <div class="panel">
-      <div class="panel-title">Vuelos</div>
+      <div class="panel-title">Flights</div>
       <table id="flightTable"></table>
     </div>
   </div>
