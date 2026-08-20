@@ -30,6 +30,7 @@ app.MapGet("/api/profiles", () => Results.Json(new
         new { code = "IC", name = "International cargo (LUX, 16xB747F + RFS)" },
         new { code = "MI", name = "Mixed carrier (SIN/BRU, 23 a/c + PAX bellies)" },
         new { code = "EX", name = "Express (BRU/BAH/PHL/PTY, 84 a/c)" },
+        new { code = "GI", name = "GI-style integrator (LEJ/CVG/HKG/BAH, 140 a/c, dense demand)" },
     },
     sets = new[] { 1, 2, 3 },
 }));

@@ -26,7 +26,8 @@ public sealed record AirlineProfile(
     double RevenueTkmTarget,       // weekly revenue tonne-km (Table 1)
     ExternalSpec? External,
     int NumExternalDestinations,
-    double RateMultiplier = 1.0)  // express carriers charge a premium yield
+    double RateMultiplier = 1.0,  // express carriers charge a premium yield
+    bool DenseDemand = false)     // point-to-point O&Ds from every station, not hub-anchored
 {
     public static readonly AirlineProfile RC = new(
         Code: "RC", HubCodes: ["HKG"], NumCargoDestinations: 23,
@@ -99,9 +100,36 @@ public sealed record AirlineProfile(
         External: null, NumExternalDestinations: 0,
         RateMultiplier: 2.2);
 
+    /// <summary>
+    /// A global integrator archetype beyond the paper's four: GI-style hub network (LEJ, CVG,
+    /// HKG, BAH), a larger heterogeneous fleet (140 aircraft), and a DENSE demand matrix —
+    /// every station originates O&amp;Ds towards many destinations, not just hub-anchored flows.
+    /// </summary>
+    public static readonly AirlineProfile GI = new(
+        Code: "GI", HubCodes: ["LEJ", "CVG", "HKG", "BAH"], NumCargoDestinations: 150,
+        Regions: [Region.Europe, Region.NorthAmerica, Region.SouthAmerica, Region.Asia,
+                  Region.MiddleEast, Region.Africa, Region.Oceania],
+        Fleets:
+        [
+            new FleetSpec("B777F", 26, 102, 650, 9200, 900, 130_000, 5.5, 3800, 25_000,
+                MntCycles: 40, MntFlightMinutes: 5400, MntElapsedMinutes: 2 * 10080, MntDurationMinutes: 600),
+            new FleetSpec("B767F", 42, 52, 438, 6000, 850, 70_000, 3.6, 2500, 15_000,
+                MntCycles: 44, MntFlightMinutes: 4800, MntElapsedMinutes: 2 * 10080, MntDurationMinutes: 480),
+            new FleetSpec("A300F", 45, 45, 320, 6600, 840, 60_000, 3.4, 2200, 12_000,
+                MntCycles: 44, MntFlightMinutes: 4500, MntElapsedMinutes: 2 * 10080, MntDurationMinutes: 480),
+            new FleetSpec("B757F", 35, 29, 239, 5800, 850, 45_000, 2.6, 1500, 10_000,
+                MntCycles: 44, MntFlightMinutes: 4500, MntElapsedMinutes: 2 * 10080, MntDurationMinutes: 420),
+        ],
+        MandatoryFlights: 1000, OptionalFlightsSetII: 500,
+        MinStops: 1, MaxStops: 2, InterHubRouteProb: 0.15,
+        NumOds: 9000, MinDeliveryDays: 2, MaxDeliveryDays: 5,
+        RevenueTkmTarget: 210_000_000,
+        External: null, NumExternalDestinations: 0,
+        RateMultiplier: 2.2, DenseDemand: true);
+
     public static AirlineProfile Get(string code) => code.ToUpperInvariant() switch
     {
-        "RC" => RC, "IC" => IC, "MI" => MI, "EX" => EX,
+        "RC" => RC, "IC" => IC, "MI" => MI, "EX" => EX, "GI" => GI,
         _ => throw new ArgumentException($"Unknown airline profile '{code}'"),
     };
 }

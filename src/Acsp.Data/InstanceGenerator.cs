@@ -30,6 +30,10 @@ public sealed class InstanceGenerator
     private readonly List<FlightDraft> _externalPool = [];
     private readonly List<OdDraft> _ods = [];
 
+    // budget of block hours for routes only the longest-range fleet can fly (feasibility guard):
+    // once exhausted, further routes are generated with legs capped at the second-largest range
+    private double _topRange, _secondRange, _forcedHours, _forcedBudgetHours;
+
     public InstanceGenerator(AirlineProfile profile, int seed)
     {
         _p = profile;
@@ -38,6 +42,11 @@ public sealed class InstanceGenerator
         // for instances to be reproducible across runs
         int code = profile.Code.Aggregate(17, (h, c) => h * 31 + c);
         _rng = new Random(code * 1000 + seed);
+        _topRange = profile.Fleets.Max(f => f.RangeKm);
+        var below = profile.Fleets.Where(f => f.RangeKm < _topRange).ToList();
+        _secondRange = below.Count > 0 ? below.Max(f => f.RangeKm) : _topRange;
+        var topFleet = profile.Fleets.First(f => f.RangeKm == _topRange);
+        _forcedBudgetHours = below.Count > 0 ? 0.22 * topFleet.Count * 168 : double.PositiveInfinity;
         PickDestinations();
         BuildFlightPool();
         BuildExternalFlights();
@@ -143,34 +152,45 @@ public sealed class InstanceGenerator
 
     private (FlightDraft Draft, FlightDraft? Mirror) BuildRouteOrPair(string code, bool allowPair)
     {
-        double maxRange = _p.Fleets.Max(f => f.RangeKm);
+        double legCap = _forcedHours >= _forcedBudgetHours ? _secondRange : _topRange;
         if (allowPair && _p.HubCodes.Length > 1 && _rng.NextDouble() < _p.InterHubRouteProb)
         {
             var s = AirportDb.Get(_p.HubCodes[_rng.Next(_p.HubCodes.Length)]);
             var e = AirportDb.Get(_p.HubCodes[_rng.Next(_p.HubCodes.Length)]);
-            if (e.Code != s.Code && GreatCircle.Km(s, e) <= maxRange * 1.9)
+            if (e.Code != s.Code && GreatCircle.Km(s, e) <= legCap * 1.9)
             {
-                var outbound = TryBuildRoute(code, s, e, out var route);
+                var outbound = TryBuildRoute(code, s, e, legCap, out var route);
                 if (outbound is not null && route is not null)
                 {
                     // mirror flies the same stops in reverse (out-and-back): identical leg
                     // distances keep the forced-fleet classes balanced per direction
                     var back = new List<AirportInfo>(route);
                     back.Reverse();
-                    return (outbound, DraftFromRoute(code, back));
+                    var mirror = DraftFromRoute(code, back);
+                    AccountForcedHours(outbound);
+                    AccountForcedHours(mirror);
+                    return (outbound, mirror);
                 }
             }
         }
         var hub = AirportDb.Get(_p.HubCodes[_rng.Next(_p.HubCodes.Length)]);
-        return (TryBuildRoute(code, hub, hub, out _) ?? BuildFallbackRoundTrip(code), null);
+        var draft = TryBuildRoute(code, hub, hub, legCap, out _) ?? BuildFallbackRoundTrip(code);
+        AccountForcedHours(draft);
+        return (draft, null);
+    }
+
+    /// <summary>Tracks block hours of routes that only the longest-range fleet can operate.</summary>
+    private void AccountForcedHours(FlightDraft d)
+    {
+        if (d.Legs.Max(l => l.DistKm) <= _secondRange) return;
+        _forcedHours += d.Legs.Sum(l => Period.Weekly.Time(l.Dep, l.Arr)) / 60.0;
     }
 
     /// <summary>Builds one multi-leg route startHub -> stops -> endHub with per-leg range checks.</summary>
     private FlightDraft? TryBuildRoute(string code, AirportInfo startHub, AirportInfo endHub,
-        out List<AirportInfo>? routeOut)
+        double maxRange, out List<AirportInfo>? routeOut)
     {
         routeOut = null;
-        double maxRange = _p.Fleets.Max(f => f.RangeKm);
         for (int attempt = 0; attempt < 60; attempt++)
         {
             int stops = _rng.Next(_p.MinStops, _p.MaxStops + 1);
@@ -274,10 +294,17 @@ public sealed class InstanceGenerator
         double sumTkm = 0;
         for (int i = 0; i < _p.NumOds; i++)
         {
+            // dense (integrator) demand: every station originates O&Ds, destinations spread
+            // over the whole network — the round-robin origin guarantees full station coverage
+            AirportInfo o, d;
+            if (_p.DenseDemand)
+            {
+                o = airports[i % airports.Count];
+                do { d = airports[_rng.Next(airports.Count)]; } while (d.Code == o.Code);
+            }
             // hub-and-spoke demand: most tonnage moves via a hub gateway, so with high
             // probability one endpoint of the O&D is a hub (single-flight servable)
-            AirportInfo o, d;
-            if (_rng.NextDouble() < 0.65)
+            else if (_rng.NextDouble() < 0.65)
             {
                 var hub = hubs[_rng.Next(hubs.Count)];
                 var other = airports[_rng.Next(airports.Count)];

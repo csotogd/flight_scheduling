@@ -102,7 +102,7 @@ static int Generate(string[] a)
     string set = Opt(a, "set", "all");
     int seeds = int.Parse(Opt(a, "seeds", "5"));
     string dir = Opt(a, "out", "instances");
-    var airlines = airline == "all" ? ["RC", "IC", "MI", "EX"] : new[] { airline.ToUpperInvariant() };
+    var airlines = airline == "all" ? ["RC", "IC", "MI", "EX", "GI"] : new[] { airline.ToUpperInvariant() };
     var sets = set == "all" ? [1, 2, 3] : new[] { int.Parse(set) };
     foreach (var al in airlines)
         foreach (var st in sets)
