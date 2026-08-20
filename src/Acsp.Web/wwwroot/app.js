@@ -146,16 +146,25 @@ function makeZoomable(svg) {
     vb.y = c.y - (c.y - vb.y) * k;
     vb.width *= k; vb.height *= k;
   }, { passive: false });
-  let dragging = false;
+  // capture the pointer only once a real drag starts, so plain clicks still
+  // reach child elements (e.g. clickable station labels)
+  let dragging = false, captured = false;
   svg.addEventListener("pointerdown", e => {
     dragging = true;
+    captured = false;
     svg.dataset.moved = "";
-    svg.setPointerCapture(e.pointerId);
-    svg.style.cursor = "grabbing";
   });
   svg.addEventListener("pointermove", e => {
     if (!dragging) return;
-    if (Math.abs(e.movementX) + Math.abs(e.movementY) > 2) svg.dataset.moved = "1";
+    if (Math.abs(e.movementX) + Math.abs(e.movementY) > 2) {
+      svg.dataset.moved = "1";
+      if (!captured) {
+        svg.setPointerCapture(e.pointerId);
+        svg.style.cursor = "grabbing";
+        captured = true;
+      }
+    }
+    if (!captured) return;
     const vb = svg.viewBox.baseVal;
     const scale = vb.width / svg.clientWidth;
     vb.x -= e.movementX * scale;
@@ -163,7 +172,8 @@ function makeZoomable(svg) {
   });
   svg.addEventListener("pointerup", e => {
     dragging = false;
-    svg.releasePointerCapture(e.pointerId);
+    if (captured) svg.releasePointerCapture(e.pointerId);
+    captured = false;
     svg.style.cursor = "grab";
   });
   svg.addEventListener("dblclick", () => {
@@ -255,8 +265,12 @@ function renderTimeSpace(sol) {
   const rowH = 22, m = { l: 64, r: 10, t: 24, b: 8 };
   const W = 3200, H = m.t + rowsIds.length * rowH + m.b; // wide horizontal axis
   svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  // element size must match the viewBox aspect ratio, otherwise the default
+  // xMidYMid letterboxing shifts the drawing away from the hit-test coordinates
+  svg.setAttribute("preserveAspectRatio", "xMinYMin meet");
   svg.style.width = W + "px";
-  svg.setAttribute("height", Math.min(520, H));
+  svg.style.height = H + "px";
+  svg.removeAttribute("height");
   const X = t => m.l + (W - m.l - m.r) * t / N;
   const Y = row => m.t + row * rowH + rowH / 2;
 
@@ -293,10 +307,17 @@ function renderTimeSpace(sol) {
     svgEl(svg, "line", { x1: m.l, x2: W - m.r, y1: Y(i), y2: Y(i), stroke: "#eeeeee", "stroke-width": .5 });
     const label = svgEl(svg, "text", { x: 6, y: Y(i) + 3,
       fill: ap[id].hub ? "#cc0000" : "#555555", "font-size": 10,
-      "font-weight": ap[id].hub ? "bold" : "normal", cursor: "pointer" }, ap[id].code);
-    svgEl(label, "title", {}, `${ap[id].code} — click to highlight only flights touching this station`);
-    label.addEventListener("click", e => {
+      "font-weight": ap[id].hub ? "bold" : "normal", cursor: "pointer",
+      "pointer-events": "none" }, ap[id].code);
+    // generous invisible hit area over the whole label column of the row
+    const hit = svgEl(svg, "rect", {
+      x: 0, y: Y(i) - rowH / 2, width: m.l, height: rowH,
+      fill: "transparent", cursor: "pointer",
+    });
+    svgEl(hit, "title", {}, `${ap[id].code} — click to highlight only flights touching this station`);
+    hit.addEventListener("click", e => {
       e.stopPropagation();
+      if (svg.dataset.moved === "1") { svg.dataset.moved = ""; return; }
       tsSelectedStation = tsSelectedStation === id ? null : id;
       applyStationFilter();
     });
