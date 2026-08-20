@@ -8,6 +8,7 @@ const pct = n => n == null ? "—" : (100 * n).toFixed(2) + " %";
 let currentJob = null;
 let series = []; // {t, incumbent, bound}
 let worldPolys = []; // simplified country outlines [[lon,lat],...]
+let tsSelectedStation = null; // time-space: highlight flights touching this airport id
 
 init();
 
@@ -148,11 +149,13 @@ function makeZoomable(svg) {
   let dragging = false;
   svg.addEventListener("pointerdown", e => {
     dragging = true;
+    svg.dataset.moved = "";
     svg.setPointerCapture(e.pointerId);
     svg.style.cursor = "grabbing";
   });
   svg.addEventListener("pointermove", e => {
     if (!dragging) return;
+    if (Math.abs(e.movementX) + Math.abs(e.movementY) > 2) svg.dataset.moved = "1";
     const vb = svg.viewBox.baseVal;
     const scale = vb.width / svg.clientWidth;
     vb.x -= e.movementX * scale;
@@ -262,10 +265,42 @@ function renderTimeSpace(sol) {
     svgEl(svg, "line", { x1: X(d * 1440), x2: X(d * 1440), y1: m.t - 6, y2: H - m.b, stroke: "#dddddd", "stroke-width": .6 });
     svgEl(svg, "text", { x: X(d * 1440 + 720), y: 13, fill: "#555555", "font-size": 10, "text-anchor": "middle" }, days[d]);
   }
+  // airports touched by each flight (for the station highlight filter)
+  const flightAirports = {};
+  for (const f of sol.flights) {
+    const set = new Set();
+    for (const l of f.legs) { set.add(l.from); set.add(l.to); }
+    flightAirports[f.id] = set;
+  }
+
+  const legEls = [];   // {el, flightId, baseOpacity}
+  const labelEls = {}; // airport id -> text element
+
+  function applyStationFilter() {
+    const sel = tsSelectedStation;
+    for (const { el, flightId, baseOpacity } of legEls)
+      el.setAttribute("opacity", sel == null ? baseOpacity
+        : flightAirports[flightId].has(sel) ? 0.95 : 0.06);
+    for (const [id, el] of Object.entries(labelEls)) {
+      const on = sel != null && +id === sel;
+      el.setAttribute("fill", on ? "#cc0000" : ap[id].hub ? "#cc0000" : "#555555");
+      el.setAttribute("font-weight", on || ap[id].hub ? "bold" : "normal");
+      el.setAttribute("text-decoration", on ? "underline" : "none");
+    }
+  }
+
   rowsIds.forEach((id, i) => {
     svgEl(svg, "line", { x1: m.l, x2: W - m.r, y1: Y(i), y2: Y(i), stroke: "#eeeeee", "stroke-width": .5 });
-    svgEl(svg, "text", { x: 6, y: Y(i) + 3, fill: ap[id].hub ? "#cc0000" : "#555555", "font-size": 10,
-      "font-weight": ap[id].hub ? "bold" : "normal" }, ap[id].code);
+    const label = svgEl(svg, "text", { x: 6, y: Y(i) + 3,
+      fill: ap[id].hub ? "#cc0000" : "#555555", "font-size": 10,
+      "font-weight": ap[id].hub ? "bold" : "normal", cursor: "pointer" }, ap[id].code);
+    svgEl(label, "title", {}, `${ap[id].code} — click to highlight only flights touching this station`);
+    label.addEventListener("click", e => {
+      e.stopPropagation();
+      tsSelectedStation = tsSelectedStation === id ? null : id;
+      applyStationFilter();
+    });
+    labelEls[id] = label;
   });
 
   let skipped = 0;
@@ -283,6 +318,7 @@ function renderTimeSpace(sol) {
       if (external) line.setAttribute("stroke-dasharray", "4 3");
       svgEl(line, "title", {},
         `${f.code} ${ap[l.from].code}→${ap[l.to].code}  load ${l.loadT}t/${l.capT}t`);
+      legEls.push({ el: line, flightId: f.id, baseOpacity: 0.8 });
     };
     if (arrAbs <= N) {
       seg(l.dep, Y(r1), arrAbs, Y(r2));
@@ -294,8 +330,17 @@ function renderTimeSpace(sol) {
       seg(0, yMid, arrAbs - N, Y(r2));
     }
   }
+  // clicking the background clears the station filter (but not after a pan drag)
+  svg.addEventListener("click", () => {
+    if (svg.dataset.moved === "1") { svg.dataset.moved = ""; return; }
+    if (tsSelectedStation != null) { tsSelectedStation = null; applyStationFilter(); }
+  });
+  if (tsSelectedStation != null && rowOf[tsSelectedStation] === undefined) tsSelectedStation = null;
+  applyStationFilter();
+
   $("tsNote").textContent = ` ${rowsIds.length} busiest airports` +
-    (skipped ? `, ${skipped} legs out of view` : "") + " — wheel: zoom, drag: pan";
+    (skipped ? `, ${skipped} legs out of view` : "") +
+    " — wheel: zoom, drag: pan, click a station to filter";
   rememberViewBox(svg);
   makeZoomable(svg);
 }
