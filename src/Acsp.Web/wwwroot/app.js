@@ -191,18 +191,18 @@ function drawConvergence() {
   const Y = v => m.t + (H - m.t - m.b) * (1 - (v - vMin) / (vMax - vMin));
   for (let i = 0; i <= 4; i++) {
     const v = vMin + (vMax - vMin) * i / 4;
-    svgEl(svg, "line", { x1: m.l, x2: W - m.r, y1: Y(v), y2: Y(v), stroke: "#2a3446", "stroke-width": .5 });
-    svgEl(svg, "text", { x: m.l - 6, y: Y(v) + 4, fill: "#8494ab", "font-size": 10, "text-anchor": "end" }, fmt(v));
+    svgEl(svg, "line", { x1: m.l, x2: W - m.r, y1: Y(v), y2: Y(v), stroke: "#dddddd", "stroke-width": .5 });
+    svgEl(svg, "text", { x: m.l - 6, y: Y(v) + 4, fill: "#555555", "font-size": 10, "text-anchor": "end" }, fmt(v));
   }
   const line = (key, color) => {
     const pts = series.filter(s => s[key] != null).map(s => `${X(s.t)},${Y(s[key])}`);
     if (pts.length > 1)
       svgEl(svg, "polyline", { points: pts.join(" "), fill: "none", stroke: color, "stroke-width": 1.6 });
   };
-  line("bound", "#f0a35e");
-  line("incumbent", "#46d68c");
-  svgEl(svg, "text", { x: W - 12, y: 14, fill: "#f0a35e", "font-size": 10, "text-anchor": "end" }, "upper bound");
-  svgEl(svg, "text", { x: W - 12, y: 26, fill: "#46d68c", "font-size": 10, "text-anchor": "end" }, "incumbent");
+  line("bound", "#cc0000");
+  line("incumbent", "#009933");
+  svgEl(svg, "text", { x: W - 12, y: 14, fill: "#cc0000", "font-size": 10, "text-anchor": "end" }, "upper bound");
+  svgEl(svg, "text", { x: W - 12, y: 26, fill: "#009933", "font-size": 10, "text-anchor": "end" }, "incumbent");
 }
 
 // ------------------------------------------------------------------ dashboard
@@ -259,17 +259,17 @@ function renderTimeSpace(sol) {
 
   const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
   for (let d = 0; d < 7; d++) {
-    svgEl(svg, "line", { x1: X(d * 1440), x2: X(d * 1440), y1: m.t - 6, y2: H - m.b, stroke: "#2a3446", "stroke-width": .6 });
-    svgEl(svg, "text", { x: X(d * 1440 + 720), y: 13, fill: "#8494ab", "font-size": 10, "text-anchor": "middle" }, days[d]);
+    svgEl(svg, "line", { x1: X(d * 1440), x2: X(d * 1440), y1: m.t - 6, y2: H - m.b, stroke: "#dddddd", "stroke-width": .6 });
+    svgEl(svg, "text", { x: X(d * 1440 + 720), y: 13, fill: "#555555", "font-size": 10, "text-anchor": "middle" }, days[d]);
   }
   rowsIds.forEach((id, i) => {
-    svgEl(svg, "line", { x1: m.l, x2: W - m.r, y1: Y(i), y2: Y(i), stroke: "#232d3f", "stroke-width": .5 });
-    svgEl(svg, "text", { x: 6, y: Y(i) + 3, fill: ap[id].hub ? "#f0d35e" : "#8494ab", "font-size": 10,
-      "font-weight": ap[id].hub ? 700 : 400 }, ap[id].code);
+    svgEl(svg, "line", { x1: m.l, x2: W - m.r, y1: Y(i), y2: Y(i), stroke: "#eeeeee", "stroke-width": .5 });
+    svgEl(svg, "text", { x: 6, y: Y(i) + 3, fill: ap[id].hub ? "#cc0000" : "#555555", "font-size": 10,
+      "font-weight": ap[id].hub ? "bold" : "normal" }, ap[id].code);
   });
 
   let skipped = 0;
-  const colors = { mandatory: "#4da3ff", optional: "#46d68c", external: "#f0a35e" };
+  const colors = { mandatory: "#0066cc", optional: "#009933", external: "#ff8800" };
   for (const { f, l, external } of activeLegs) {
     const r1 = rowOf[l.from], r2 = rowOf[l.to];
     if (r1 === undefined || r2 === undefined) { skipped++; continue; }
@@ -339,25 +339,25 @@ function renderMap(sol) {
   const Y = lat => yOff + (latMax - lat) * scale;
   const gridStep = (lonMax - lonMin) > 120 ? 30 : (lonMax - lonMin) > 40 ? 10 : 5;
   for (let lon = Math.ceil(lonMin / gridStep) * gridStep; lon <= lonMax; lon += gridStep)
-    svgEl(svg, "line", { x1: X(lon), x2: X(lon), y1: 0, y2: H, stroke: "#222b3a", "stroke-width": .5 });
+    svgEl(svg, "line", { x1: X(lon), x2: X(lon), y1: 0, y2: H, stroke: "#eeeeee", "stroke-width": .5 });
   for (let lat = Math.ceil(latMin / gridStep) * gridStep; lat <= latMax; lat += gridStep)
-    svgEl(svg, "line", { x1: 0, x2: W, y1: Y(lat), y2: Y(lat), stroke: "#222b3a", "stroke-width": .5 });
+    svgEl(svg, "line", { x1: 0, x2: W, y1: Y(lat), y2: Y(lat), stroke: "#eeeeee", "stroke-width": .5 });
 
   // world landmass behind the network (clipped by the svg viewBox)
   for (const poly of worldPolys) {
     if (poly.every(p => p[0] < lonMin || p[0] > lonMax || p[1] < latMin || p[1] > latMax)) continue;
     svgEl(svg, "path", {
       d: "M " + poly.map(p => `${X(p[0]).toFixed(1)} ${Y(p[1]).toFixed(1)}`).join(" L ") + " Z",
-      fill: "#1b2433", stroke: "#2c3a52", "stroke-width": .7,
+      fill: "#eae7dc", stroke: "#bbbbbb", "stroke-width": .7,
     });
   }
 
   const ap = Object.fromEntries(sol.airports.map(a => [a.id, a]));
   const styles = {
-    mandatory: { stroke: "#4da3ff", op: .8 },
-    optSel: { stroke: "#46d68c", op: .85 },
-    optRej: { stroke: "#3a4558", op: .55, dash: "4 4" },
-    external: { stroke: "#f0a35e", op: .5 },
+    mandatory: { stroke: "#0066cc", op: .8 },
+    optSel: { stroke: "#009933", op: .85 },
+    optRej: { stroke: "#aaaaaa", op: .7, dash: "4 4" },
+    external: { stroke: "#ff8800", op: .55 },
   };
   const legLine = (l, st, width) => {
     const a = ap[l.from], b = ap[l.to];
@@ -391,11 +391,11 @@ function renderMap(sol) {
   for (const a of sol.airports) {
     const g = svgEl(svg, "circle", {
       cx: X(a.lon), cy: Y(a.lat), r: a.hub ? 6 : 2.6,
-      fill: a.hub ? "#f0d35e" : "#9db4d4", stroke: "#0e1218", "stroke-width": 1,
+      fill: a.hub ? "#cc0000" : "#336699", stroke: "#ffffff", "stroke-width": 1,
     });
     svgEl(g, "title", {}, `${a.code} — ${a.name}${a.hub ? " (hub)" : ""}`);
     if (a.hub)
-      svgEl(svg, "text", { x: X(a.lon) + 9, y: Y(a.lat) + 4, fill: "#f0d35e", "font-size": 11, "font-weight": 600 }, a.code);
+      svgEl(svg, "text", { x: X(a.lon) + 9, y: Y(a.lat) + 4, fill: "#cc0000", "font-size": 11, "font-weight": "bold" }, a.code);
   }
   svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
   rememberViewBox(svg);
@@ -415,17 +415,17 @@ function renderGantt(sol) {
   const X = t => m.l + (W - m.l - m.r) * t / N;
   const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
   for (let d = 0; d < 7; d++) {
-    svgEl(svg, "line", { x1: X(d * 1440), x2: X(d * 1440), y1: m.t - 8, y2: H, stroke: "#2a3446", "stroke-width": .6 });
-    svgEl(svg, "text", { x: X(d * 1440 + 720), y: 14, fill: "#8494ab", "font-size": 10, "text-anchor": "middle" }, days[d]);
+    svgEl(svg, "line", { x1: X(d * 1440), x2: X(d * 1440), y1: m.t - 8, y2: H, stroke: "#dddddd", "stroke-width": .6 });
+    svgEl(svg, "text", { x: X(d * 1440 + 720), y: 14, fill: "#555555", "font-size": 10, "text-anchor": "middle" }, days[d]);
   }
   const fleetColors = {};
-  const palette = ["#4da3ff", "#46d68c", "#c792ea", "#f0a35e", "#6adada"];
+  const palette = ["#0066cc", "#009933", "#9933cc", "#ff8800", "#009999"];
   sol.fleets.forEach((f, i) => fleetColors[f.code] = palette[i % palette.length]);
 
   const flightById = Object.fromEntries(sol.flights.map(f => [f.id, f]));
   rows.forEach((r, i) => {
     const y = m.t + i * rowH;
-    svgEl(svg, "text", { x: 6, y: y + 15, fill: "#8494ab", "font-size": 10 },
+    svgEl(svg, "text", { x: 6, y: y + 15, fill: "#555555", "font-size": 10 },
       `${r.fleet} rot.${r.id + 1} (${r.aircraft} a/c)`);
     for (const s of r.strings) {
       for (const fid of s.flightIds) {
@@ -445,7 +445,7 @@ function renderGantt(sol) {
       }
       if (sol.withMaintenance) {
         const mnt = svgEl(svg, "rect", {
-          x: X(s.arr), y: y + 4, width: 5, height: rowH - 10, fill: "#f06a6a",
+          x: X(s.arr), y: y + 4, width: 5, height: rowH - 10, fill: "#cc0000",
         });
         svgEl(mnt, "title", {}, "maintenance stop");
       }
