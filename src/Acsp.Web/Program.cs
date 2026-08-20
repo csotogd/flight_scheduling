@@ -7,6 +7,16 @@ builder.Services.AddSingleton<SolveJobManager>();
 builder.Logging.SetMinimumLevel(LogLevel.Warning);
 var app = builder.Build();
 
+// resolve the results directory at the repo root (dotnet run may set cwd to the project dir)
+static string ResultsDir()
+{
+    var dir = Directory.GetCurrentDirectory();
+    for (var d = dir; d is not null; d = Path.GetDirectoryName(d))
+        if (File.Exists(Path.Combine(d, "Acsp.sln")))
+            return Path.Combine(d, "results");
+    return Path.Combine(dir, "results");
+}
+
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
@@ -76,7 +86,7 @@ app.MapGet("/api/jobs/{id}/result", (string id, SolveJobManager jobs) =>
 app.MapPost("/api/propose", (SolveRequest req, SolveJobManager jobs) =>
 {
     var inst = Acsp.Data.InstanceGenerator.Generate(req.Airline, req.Set, req.Seed);
-    var solPath = Path.Combine("results",
+    var solPath = Path.Combine(ResultsDir(),
         inst.Name + (req.Maintenance ? "-mnt" : "") + ".solution.json");
     var shipped = new double[inst.Ods.Length];
     if (File.Exists(solPath))
@@ -102,7 +112,7 @@ app.MapPost("/api/propose", (SolveRequest req, SolveJobManager jobs) =>
 // itinerary download as a real .xlsx (rotations + cargo flows + P&L)
 app.MapGet("/api/solutions/{name}/itinerary.xlsx", (string name) =>
 {
-    var path = Path.Combine("results", name + ".solution.json");
+    var path = Path.Combine(ResultsDir(), name + ".solution.json");
     if (!File.Exists(path) || name.Contains("..")) return Results.NotFound();
     using var doc = JsonDocument.Parse(File.ReadAllText(path));
     var root = doc.RootElement;
@@ -189,7 +199,7 @@ app.MapGet("/api/solutions/{name}/itinerary.xlsx", (string name) =>
 // previously saved solutions on disk
 app.MapGet("/api/solutions", () =>
 {
-    var dir = "results";
+    var dir = ResultsDir();
     if (!Directory.Exists(dir)) return Results.Json(Array.Empty<object>());
     return Results.Json(Directory.GetFiles(dir, "*.solution.json")
         .OrderBy(f => f)
@@ -198,7 +208,7 @@ app.MapGet("/api/solutions", () =>
 
 app.MapGet("/api/solutions/{name}", (string name) =>
 {
-    var path = Path.Combine("results", name + ".solution.json");
+    var path = Path.Combine(ResultsDir(), name + ".solution.json");
     if (!File.Exists(path) || name.Contains("..")) return Results.NotFound();
     return Results.Text(File.ReadAllText(path), "application/json", Encoding.UTF8);
 });

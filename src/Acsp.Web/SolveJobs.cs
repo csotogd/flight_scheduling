@@ -82,8 +82,7 @@ public sealed class SolveJobManager
             if (res.Best is not null)
             {
                 job.Result = SolutionJson.Build(inst, res);
-                var dir = Path.Combine(AppContext.BaseDirectory, "results");
-                SolutionJson.Save(inst, res, Path.Combine("results",
+                SolutionJson.Save(inst, res, Path.Combine(ResultsDir(),
                     inst.Name + (job.Request.Maintenance ? "-mnt" : "") + ".solution.json"));
             }
             job.Status = res.Best is null ? "failed" : "done";
@@ -100,4 +99,14 @@ public sealed class SolveJobManager
     }
 
     private static double? Finite(double v) => double.IsFinite(v) ? Math.Round(v, 4) : null;
+
+    /// <summary>Results directory at the repo root (cwd of dotnet run varies).</summary>
+    public static string ResultsDir()
+    {
+        var dir = Directory.GetCurrentDirectory();
+        for (var d = dir; d is not null; d = Path.GetDirectoryName(d))
+            if (File.Exists(Path.Combine(d, "Acsp.sln")))
+                return Path.Combine(d, "results");
+        return Path.Combine(dir, "results");
+    }
 }

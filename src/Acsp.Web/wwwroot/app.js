@@ -394,8 +394,14 @@ function renderMap(sol) {
       fill: a.hub ? "#cc0000" : "#336699", stroke: "#ffffff", "stroke-width": 1,
     });
     svgEl(g, "title", {}, `${a.code} — ${a.name}${a.hub ? " (hub)" : ""}`);
-    if (a.hub)
-      svgEl(svg, "text", { x: X(a.lon) + 9, y: Y(a.lat) + 4, fill: "#cc0000", "font-size": 11, "font-weight": "bold" }, a.code);
+    // every station gets its code next to the dot (hubs larger and red)
+    const label = svgEl(svg, "text", {
+      x: X(a.lon) + (a.hub ? 8 : 4), y: Y(a.lat) + 3,
+      fill: a.hub ? "#cc0000" : "#333333",
+      "font-size": a.hub ? 11 : 7.5,
+      "font-weight": a.hub ? "bold" : "normal",
+      "paint-order": "stroke", stroke: "#ffffff", "stroke-width": 2,
+    }, a.code);
   }
   svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
   rememberViewBox(svg);
