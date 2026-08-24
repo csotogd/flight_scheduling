@@ -1,7 +1,7 @@
 using System.IO.Compression;
 using System.Text;
 
-namespace Acsp.Web;
+namespace Acsp.Data;
 
 /// <summary>
 /// Minimal .xlsx writer (OpenXML spreadsheet with inline strings) — no external dependencies.
