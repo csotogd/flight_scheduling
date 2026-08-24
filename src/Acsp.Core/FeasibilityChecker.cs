@@ -119,9 +119,23 @@ public static class FeasibilityChecker
         // floor of 1e-3 (a kilogram on tonne-scale rows): CPLEX/HiGHS enforce rows to their
         // own relative tolerances, which on large-coefficient rows exceed 1e-4 absolute
         double Tol(double scale) => Math.Max(1e-3, Math.Max(tol, 1e-5) * Math.Max(1, scale));
+        var contracted = new double[inst.Ods.Length];
+        foreach (var (odId, tons) in sol.Contracted)
+        {
+            if (tons < -tol) v.Add($"od {odId}: negative contracted tonnage {tons}");
+            contracted[odId] += tons;
+        }
         foreach (var od in inst.Ods)
-            if (odShipped[od.Id] > od.Weight + Tol(od.Weight))
-                v.Add($"od {od.Id}: shipped {odShipped[od.Id]:F3} > demand {od.Weight:F3} (CR-1-DEMAND)");
+        {
+            if (odShipped[od.Id] + contracted[od.Id] > od.Weight + Tol(od.Weight))
+                v.Add($"od {od.Id}: shipped {odShipped[od.Id]:F3} + contracted " +
+                    $"{contracted[od.Id]:F3} > demand {od.Weight:F3} (CR-1-DEMAND)");
+            // deliver-all: the service commitment — everything ships, own or contracted
+            if (inst.DeliverAll
+                && odShipped[od.Id] + contracted[od.Id] < od.Weight - Tol(od.Weight))
+                v.Add($"od {od.Id}: delivered {odShipped[od.Id] + contracted[od.Id]:F3} " +
+                    $"< demand {od.Weight:F3} (DELIVER-ALL)");
+        }
         foreach (var leg in inst.Legs)
         {
             if (legWeight[leg.Id] > legWeightCap[leg.Id] + Tol(legWeightCap[leg.Id]))

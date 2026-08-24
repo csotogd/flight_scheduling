@@ -327,7 +327,7 @@ public static class FlightProposer
         var extended = new Instance
         {
             Name = inst.Name.EndsWith("+prop") ? inst.Name : inst.Name + "+prop",
-            Period = inst.Period,
+            Period = inst.Period, DeliverAll = inst.DeliverAll,
             Airports = inst.Airports, Fleets = inst.Fleets,
             Legs = [.. legs], Flights = [.. flights], Ods = inst.Ods,
         };

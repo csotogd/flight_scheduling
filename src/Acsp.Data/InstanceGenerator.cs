@@ -475,7 +475,7 @@ public sealed class InstanceGenerator
 
         var inst = new Instance
         {
-            Name = name, Period = Period.Weekly,
+            Name = name, Period = Period.Weekly, DeliverAll = _p.DeliverAll,
             Airports = airports, Fleets = fleets,
             Legs = [.. legs], Flights = [.. flights], Ods = ods,
         };

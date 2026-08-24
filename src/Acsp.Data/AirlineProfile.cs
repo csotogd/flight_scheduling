@@ -28,8 +28,9 @@ public sealed record AirlineProfile(
     int NumExternalDestinations,
     double RateMultiplier = 1.0,  // express carriers charge a premium yield
     bool DenseDemand = false,     // point-to-point O&Ds from every station, not hub-anchored
-    double GravityPairShare = 0)  // >0: this share of ALL ordered station pairs gets demand,
+    double GravityPairShare = 0,  // >0: this share of ALL ordered station pairs gets demand,
                                   // sampled with distance-decaying probability (NumOds ignored)
+    bool DeliverAll = false)      // service commitment: everything ships, contracted if needed
 {
     public static readonly AirlineProfile RC = new(
         Code: "RC", HubCodes: ["HKG"], NumCargoDestinations: 23,
@@ -164,6 +165,8 @@ public sealed record AirlineProfile(
         // 625 mandatory + 625 optional out of the 1,250-flight schedule
         MandatoryFlights = 625,
         OptionalFlightsSetII = 1250,
+        // integrator service commitment: every shipment is delivered, externally if needed
+        DeliverAll = true,
     };
 
     public static AirlineProfile Get(string code) => code.ToUpperInvariant() switch

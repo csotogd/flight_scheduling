@@ -39,11 +39,24 @@ public sealed class Solution
     public required List<(CargoPath Path, double Tonnes)> Flows { get; init; }
     /// <summary>External flights actually used/booked (relevant with §4.1 fixed external costs).</summary>
     public required HashSet<int> SelectedExternalFlights { get; init; }
+    /// <summary>Deliver-all instances: tonnes delivered by contracted external carriers per od
+    /// (priced by ExternalRecourse). Empty on classic instances.</summary>
+    public List<(int OdId, double Tonnes)> Contracted { get; init; } = [];
     /// <summary>Assembled per-fleet rotations; may be empty if assembly was skipped.</summary>
     public List<Rotation> Rotations { get; init; } = [];
     public bool WithMaintenance { get; init; }
 
-    public double Revenue(Instance inst) => Flows.Sum(f => inst.Ods[f.Path.OdId].Rate * f.Tonnes);
+    public double Revenue(Instance inst) =>
+        Flows.Sum(f => inst.Ods[f.Path.OdId].Rate * f.Tonnes)
+        + Contracted.Sum(c => inst.Ods[c.OdId].Rate * c.Tonnes);
+
+    /// <summary>Cost of contracted external deliveries (deliver-all recourse).</summary>
+    public double ContractedCost(Instance inst)
+    {
+        if (Contracted.Count == 0) return 0;
+        var cost = ExternalRecourse.CostPerTonne(inst);
+        return Contracted.Sum(c => cost[c.OdId] * c.Tonnes);
+    }
 
     public double VariableCosts(Instance inst) =>
         Flows.Sum(f => (inst.Ods[f.Path.OdId].Rate - f.Path.Margin(inst)) * f.Tonnes);
@@ -57,8 +70,10 @@ public sealed class Solution
     public double AircraftCosts(Instance inst) =>
         Rotations.Sum(r => (double)r.AircraftNeeded(inst) * inst.Fleets[r.FleetId].FixedCostPerAircraft);
 
-    /// <summary>Objective (13): network-wide profit.</summary>
+    /// <summary>Objective (13): network-wide profit (contracted deliveries earn the od rate
+    /// and pay the recourse cost).</summary>
     public double Profit(Instance inst) =>
         Flows.Sum(f => f.Path.Margin(inst) * f.Tonnes)
+        + Contracted.Sum(c => inst.Ods[c.OdId].Rate * c.Tonnes) - ContractedCost(inst)
         - FixedStringCosts(inst) - AircraftCosts(inst) - ExternalFixedCosts(inst);
 }

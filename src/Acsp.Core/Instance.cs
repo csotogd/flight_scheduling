@@ -5,6 +5,10 @@ public sealed class Instance
 {
     public required string Name { get; init; }
     public required Period Period { get; init; }
+    /// <summary>Service commitment: ALL demand must be delivered — what the own network
+    /// cannot carry is contracted externally at ExternalRecourse prices. Demand rows become
+    /// equalities and every od gets an always-available contracted-delivery option.</summary>
+    public bool DeliverAll { get; init; }
     public required Airport[] Airports { get; init; }
     public required FleetType[] Fleets { get; init; }
     public required Leg[] Legs { get; init; }

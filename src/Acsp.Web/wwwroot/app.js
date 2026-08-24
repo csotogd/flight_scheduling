@@ -639,7 +639,7 @@ function renderKpis(sol) {
     ? f.legs.filter(l => l.loadT > 0).length
     : f.selected ? f.legs.length : 0), 0);
   const totalCosts = sol.pnl.variableCosts + sol.pnl.fixedFlightCosts +
-    sol.pnl.aircraftCosts + sol.pnl.externalCosts;
+    sol.pnl.aircraftCosts + sol.pnl.externalCosts + (sol.pnl.contractedCosts || 0);
   const kpis = [
     ["Weekly profit", "$" + fmt(sol.pnl.profit), sol.pnl.profit >= 0 ? "pos" : "neg"],
     ["Revenue", "$" + fmt(sol.pnl.revenue)],
@@ -648,6 +648,9 @@ function renderKpis(sol) {
     ["Demand served", (100 * shipped / demand).toFixed(1) + " %"],
     ["Aircraft", aircraft],
     ["Legs flown", fmt(flownLegs)],
+    ...(sol.pnl.contractedT > 0
+      ? [["Contracted", fmt1(sol.pnl.contractedT) + " t ($" + fmt(sol.pnl.contractedCosts) + ")"]]
+      : []),
     ["Gap", pct(sol.stats.gap)],
     ["B&B nodes", fmt(sol.stats.nodes)],
     ["Time", fmt1(sol.stats.seconds) + " s"],

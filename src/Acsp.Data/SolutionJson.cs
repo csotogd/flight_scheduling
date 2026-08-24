@@ -64,6 +64,8 @@ public static class SolutionJson
             foreach (var f in s.FlightIds)
                 coveredBy[f] = s.FleetId;
 
+        var contractedByOd = new double[inst.Ods.Length];
+        foreach (var (odId, tons) in sol.Contracted) contractedByOd[odId] += tons;
         var odShipped = new double[inst.Ods.Length];
         foreach (var (path, tons) in sol.Flows) odShipped[path.OdId] += tons;
 
@@ -116,6 +118,8 @@ public static class SolutionJson
                 fixedFlightCosts = sol.FixedStringCosts(inst),
                 aircraftCosts = sol.AircraftCosts(inst),
                 externalCosts = sol.ExternalFixedCosts(inst),
+                contractedCosts = sol.ContractedCost(inst),
+                contractedT = Math.Round(sol.Contracted.Sum(c => c.Tonnes), 1),
                 profit = sol.Profit(inst),
             },
             airports = inst.Airports.Select(ap => new
@@ -166,6 +170,7 @@ public static class SolutionJson
             {
                 id = od.Id, from = od.Origin, to = od.Destination,
                 demandT = od.Weight, shippedT = Math.Round(odShipped[od.Id], 3),
+                contractedT = Math.Round(contractedByOd[od.Id], 3),
                 rate = od.Rate, avail = od.Avail, deadline = od.MaxDeliveryTime,
                 servable = servable[od.Id],
                 servableInSchedule = servableInSchedule[od.Id],

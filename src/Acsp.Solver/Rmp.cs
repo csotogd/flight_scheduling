@@ -37,6 +37,7 @@ public sealed class Rmp : IDisposable
     private readonly Dictionary<int, int> _extCol = [];     // external flight id -> column
     private readonly List<(int Od, int Flight)> _cuts = [];
     private readonly List<int> _artificialCols = [];
+    private int[]? _recourseCol; // deliver-all: contracted delivery column per od
     private const double BigM = 1e7;
 
     public IReadOnlyList<PathCol> Paths => _paths;
@@ -53,9 +54,25 @@ public sealed class Rmp : IDisposable
         WithMaintenance = withMaintenance;
         Network = new TimelineNetwork(inst, withMaintenance);
 
+        // deliver-all: demand rows are equalities and every od carries an always-available
+        // contracted-delivery column (ExternalRecourse pricing), so serving everything is
+        // feasible by construction and the model trades own flying against the contract bill
         _odRow = new int[inst.Ods.Length];
         foreach (var od in inst.Ods)
-            _odRow[od.Id] = _lp.AddRow(-Inf, od.Weight, [], []);
+            _odRow[od.Id] = inst.DeliverAll
+                ? _lp.AddRow(od.Weight, od.Weight, [], [])
+                : _lp.AddRow(-Inf, od.Weight, [], []);
+        if (inst.DeliverAll)
+        {
+            var recourse = ExternalRecourse.CostPerTonne(inst);
+            _recourseCol = new int[inst.Ods.Length];
+            foreach (var od in inst.Ods)
+            {
+                Span<int> r = [_odRow[od.Id]];
+                Span<double> c = [1.0];
+                _recourseCol[od.Id] = _lp.AddColumn(od.Rate - recourse[od.Id], 0, od.Weight, r, c);
+            }
+        }
 
         _legWeightRow = new int[inst.Legs.Length];
         _legVolumeRow = new int[inst.Legs.Length];
@@ -385,8 +402,14 @@ public sealed class Rmp : IDisposable
             .Select(pc => (pc.Path, res.ColumnValues[pc.Col])).ToList();
         var ext = _extCol.Where(kv => res.ColumnValues[kv.Value] > 1 - tol)
             .Select(kv => kv.Key).ToHashSet();
+        var contracted = new List<(int, double)>();
+        if (_recourseCol is not null)
+            foreach (var od in _inst.Ods)
+                if (res.ColumnValues[_recourseCol[od.Id]] > tol)
+                    contracted.Add((od.Id, res.ColumnValues[_recourseCol[od.Id]]));
         return new Solution
         {
+            Contracted = contracted,
             SelectedStrings = strings,
             Flows = flows,
             SelectedExternalFlights = ext,

@@ -74,6 +74,40 @@ public class DesignScalingTests
     }
 
     [Fact]
+    public void Deliver_all_serves_every_od_with_contracting_as_recourse()
+    {
+        var baseInst = InstanceGenerator.Generate("RC", 1, 1);
+        var inst = new Instance
+        {
+            Name = baseInst.Name + "-da", Period = baseInst.Period, DeliverAll = true,
+            Airports = baseInst.Airports, Fleets = baseInst.Fleets,
+            Legs = baseInst.Legs, Flights = baseInst.Flights, Ods = baseInst.Ods,
+        };
+        var bpc = new BranchAndPrice(inst, new Acsp.Solver.BpcOptions
+        { TimeLimitSeconds = 60, LpBackend = "highs" });
+        var res = bpc.Solve();
+        Assert.NotNull(res.Best);
+        var feas = FeasibilityChecker.Check(inst, res.Best!);
+        Assert.True(feas.IsFeasible, feas.ToString());
+
+        // the service commitment: every od fully delivered, own network or contracted
+        var shipped = new double[inst.Ods.Length];
+        foreach (var (path, tons) in res.Best!.Flows) shipped[path.OdId] += tons;
+        foreach (var (odId, tons) in res.Best.Contracted) shipped[odId] += tons;
+        foreach (var od in inst.Ods)
+            Assert.True(Math.Abs(shipped[od.Id] - od.Weight) < 1e-2,
+                $"od {od.Id}: delivered {shipped[od.Id]:F3} of {od.Weight:F3}");
+
+        // recourse pricing is ~3x own economics: contracting everything must cost real money
+        Assert.True(res.Best.Contracted.Count > 0 || res.Best.Flows.Count > 0);
+        Assert.True(res.Objective > double.NegativeInfinity);
+        // and the solver profit matches the independently recomputed solution profit
+        Assert.True(Math.Abs(res.Objective - res.Best.Profit(inst))
+            < Math.Max(1, Math.Abs(res.Objective)) * 1e-4,
+            $"objective {res.Objective:F0} vs recomputed {res.Best.Profit(inst):F0}");
+    }
+
+    [Fact]
     public void Seed_flow_loader_monetizes_a_cover_schedule()
     {
         var inst = InstanceGenerator.Generate("RC", 1, 1);

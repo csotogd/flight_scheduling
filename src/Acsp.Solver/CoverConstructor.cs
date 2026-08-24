@@ -171,6 +171,11 @@ public static class CoverConstructor
                 Flows = [],
                 SelectedExternalFlights = [],
                 WithMaintenance = false,
+                // deliver-all: the seed honors the service commitment by contracting
+                // everything externally; the seed flow loader then moves cargo onto the
+                // own network wherever that is cheaper
+                Contracted = inst.DeliverAll
+                    ? inst.Ods.Select(o => (o.Id, o.Weight)).ToList() : [],
             };
             SolutionAssembler.AssembleRotations(inst, s);
             return s;

@@ -88,7 +88,8 @@ public static class OdConsolidator
             }).ToArray();
         var coarse = new Instance
         {
-            Name = inst.Name, Period = inst.Period, Airports = inst.Airports,
+            Name = inst.Name, Period = inst.Period, DeliverAll = inst.DeliverAll,
+            Airports = inst.Airports,
             Fleets = inst.Fleets, Legs = inst.Legs, Flights = inst.Flights, Ods = ods,
         };
         coarse.Validate();
