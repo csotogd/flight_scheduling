@@ -69,8 +69,11 @@ public sealed class HighsSolver : ILpSolver
         return Extract(withDuals: true);
     }
 
-    public LpResult SolveMip(double timeLimitSeconds = double.PositiveInfinity, double mipGap = 1e-6)
+    public LpResult SolveMip(double timeLimitSeconds = double.PositiveInfinity, double mipGap = 1e-6,
+        IReadOnlyList<(int Col, double Value)>? mipStart = null)
     {
+        // partial MIP starts are not supported by the HiGHS C API (Highs_setSolution needs a
+        // complete, feasible primal point) — ignored here, CPLEX honors them
         ApplyIntegrality(relax: false);
         Native.Highs_setDoubleOptionValue(_h, "time_limit",
             double.IsFinite(timeLimitSeconds) ? timeLimitSeconds : 1e30);
@@ -145,25 +148,7 @@ public sealed class HighsSolver : ILpSolver
     {
         private const string Lib = "highs";
 
-        static Native()
-        {
-            NativeLibrary.SetDllImportResolver(typeof(Native).Assembly, (name, _, _) =>
-            {
-                if (name != Lib) return IntPtr.Zero;
-                foreach (var candidate in new[]
-                {
-                    Environment.GetEnvironmentVariable("ACSP_LIBHIGHS") ?? "",
-                    "/opt/homebrew/lib/libhighs.dylib",
-                    "/usr/local/lib/libhighs.dylib",
-                    "libhighs.so", "libhighs.dylib", "highs.dll",
-                })
-                {
-                    if (candidate.Length > 0 && NativeLibrary.TryLoad(candidate, out var handle))
-                        return handle;
-                }
-                return IntPtr.Zero;
-            });
-        }
+        static Native() => NativeLoader.EnsureRegistered();
 
         [DllImport(Lib)] public static extern IntPtr Highs_create();
         [DllImport(Lib)] public static extern void Highs_destroy(IntPtr h);

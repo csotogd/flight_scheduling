@@ -2,16 +2,23 @@ using Acsp.Solver.Lp;
 
 namespace Acsp.Tests;
 
-public class HighsSolverTests
+/// <summary>
+/// Backend-independent contract tests for ILpSolver. Each backend subclass runs the same
+/// assertions; CplexSolverTests self-skips when no local CPLEX installation is present.
+/// </summary>
+public abstract class LpSolverContractTests
 {
     private const double Inf = double.PositiveInfinity;
+
+    protected abstract ILpSolver? Create();
 
     [Fact]
     public void Solves_small_lp_with_correct_duals()
     {
         // max 3x + 2y  s.t.  x + y <= 4,  x + 3y <= 6,  x,y >= 0
         // optimum at (4, 0): obj 12; row1 binding (dual 3), row2 slack (dual 0)
-        using var lp = new HighsSolver();
+        using var lp = Create();
+        if (lp is null) return;
         int r1 = lp.AddRow(-Inf, 4, [], []);
         int r2 = lp.AddRow(-Inf, 6, [], []);
         lp.AddColumn(3, 0, Inf, [r1, r2], [1.0, 1.0]);
@@ -31,7 +38,8 @@ public class HighsSolverTests
     public void Supports_column_generation_workflow()
     {
         // Start with one column, solve, add a second column priced against the duals, re-solve.
-        using var lp = new HighsSolver();
+        using var lp = Create();
+        if (lp is null) return;
         int cap = lp.AddRow(-Inf, 10, [], []);
         lp.AddColumn(1.0, 0, Inf, [cap], [1.0]);
         var r1 = lp.SolveLp();
@@ -47,7 +55,8 @@ public class HighsSolverTests
     public void Solves_mip_with_integrality()
     {
         // max x + y s.t. 2x + 2y <= 5, binary-ish: LP gives 2.5 total, MIP gives 2
-        using var lp = new HighsSolver();
+        using var lp = Create();
+        if (lp is null) return;
         int r = lp.AddRow(-Inf, 5, [], []);
         int x = lp.AddColumn(1, 0, Inf, [r], [2.0]);
         int y = lp.AddColumn(1, 0, Inf, [r], [2.0]);
@@ -66,7 +75,8 @@ public class HighsSolverTests
     [Fact]
     public void Detects_infeasibility_and_bound_changes()
     {
-        using var lp = new HighsSolver();
+        using var lp = Create();
+        if (lp is null) return;
         int r = lp.AddRow(3, Inf, [], []); // a x >= 3
         int x = lp.AddColumn(-1, 0, 1, [r], [1.0]); // x <= 1 -> infeasible
         Assert.Equal(LpStatus.Infeasible, lp.SolveLp().Status);
@@ -82,7 +92,8 @@ public class HighsSolverTests
     public void Equality_rows_have_free_duals()
     {
         // max x s.t. x + y = 2, y <= 3, x <= 1  -> x=1, y=1
-        using var lp = new HighsSolver();
+        using var lp = Create();
+        if (lp is null) return;
         int eq = lp.AddRow(2, 2, [], []);
         lp.AddColumn(1, 0, 1, [eq], [1.0]);
         lp.AddColumn(0, 0, 3, [eq], [1.0]);
@@ -90,4 +101,31 @@ public class HighsSolverTests
         Assert.Equal(LpStatus.Optimal, res.Status);
         Assert.Equal(1.0, res.Objective, 6);
     }
+
+    [Fact]
+    public void Handles_ranged_rows()
+    {
+        // max x s.t. 1 <= x + y <= 3, y >= 1, x <= 5  -> x = 2, y = 1
+        using var lp = Create();
+        if (lp is null) return;
+        int rng = lp.AddRow(1, 3, [], []);
+        lp.AddColumn(1, 0, 5, [rng], [1.0]);
+        lp.AddColumn(0, 1, Inf, [rng], [1.0]);
+        var res = lp.SolveLp();
+        Assert.Equal(LpStatus.Optimal, res.Status);
+        Assert.Equal(2.0, res.Objective, 6);
+        // tightening the range upper bound moves the optimum
+        lp.SetRowBounds(rng, 1, 2);
+        Assert.Equal(1.0, lp.SolveLp().Objective, 6);
+    }
+}
+
+public class HighsSolverTests : LpSolverContractTests
+{
+    protected override ILpSolver Create() => new HighsSolver();
+}
+
+public class CplexSolverTests : LpSolverContractTests
+{
+    protected override ILpSolver? Create() => CplexSolver.IsAvailable ? new CplexSolver() : null;
 }

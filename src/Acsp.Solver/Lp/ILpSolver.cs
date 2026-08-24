@@ -34,20 +34,36 @@ public interface ILpSolver : IDisposable
     void SetInteger(int col, bool isInteger);
 
     LpResult SolveLp();
-    LpResult SolveMip(double timeLimitSeconds = double.PositiveInfinity, double mipGap = 1e-6);
+    /// <param name="mipStart">Optional sparse warm-start values (column, value) for the MIP;
+    /// unspecified integer columns may be completed by the backend. Backends without partial
+    /// MIP-start support are free to ignore it.</param>
+    LpResult SolveMip(double timeLimitSeconds = double.PositiveInfinity, double mipGap = 1e-6,
+        IReadOnlyList<(int Col, double Value)>? mipStart = null);
 }
 
 public static class LpSolverFactory
 {
-    /// <summary>Creates the configured solver backend ("highs" or "cplex").</summary>
+    /// <summary>
+    /// Creates the configured solver backend: "highs", "cplex", or "auto" (the default), which
+    /// picks CPLEX when a local installation is found and falls back to HiGHS otherwise.
+    /// </summary>
     public static ILpSolver Create(string? backend = null)
     {
-        backend ??= Environment.GetEnvironmentVariable("ACSP_LP_BACKEND") ?? "highs";
+        backend ??= Environment.GetEnvironmentVariable("ACSP_LP_BACKEND") ?? "auto";
         return backend.ToLowerInvariant() switch
         {
             "highs" => new HighsSolver(),
             "cplex" => CplexSolver.CreateOrThrow(),
+            "auto" => CplexSolver.IsAvailable ? new CplexSolver() : new HighsSolver(),
             _ => throw new ArgumentException($"Unknown LP backend '{backend}'"),
         };
     }
+
+    /// <summary>Name of the backend that Create(null) will pick, for logging.</summary>
+    public static string DefaultBackendName =>
+        (Environment.GetEnvironmentVariable("ACSP_LP_BACKEND") ?? "auto") switch
+        {
+            "auto" => CplexSolver.IsAvailable ? "cplex" : "highs",
+            var b => b,
+        };
 }
