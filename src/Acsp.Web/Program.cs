@@ -1,9 +1,13 @@
 using System.Text;
 using System.Text.Json;
+using Acsp.Data;
 using Acsp.Web;
 
+System.Globalization.CultureInfo.DefaultThreadCurrentCulture =
+    System.Globalization.CultureInfo.InvariantCulture;
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddSingleton<SolveJobManager>();
+builder.Services.AddSingleton<UploadStore>();
 builder.Logging.SetMinimumLevel(LogLevel.Warning);
 var app = builder.Build();
 
@@ -31,14 +35,69 @@ app.MapGet("/api/profiles", () => Results.Json(new
         new { code = "MI", name = "Mixed carrier (SIN/BRU, 23 a/c + PAX bellies)" },
         new { code = "EX", name = "Express (BRU/BAH/PHL/PTY, 84 a/c)" },
         new { code = "GI", name = "GI-style integrator (LEJ/CVG/HKG/BAH, 140 a/c, dense demand)" },
+        new { code = "RLA", name = "GI real (7 hubs, gravity demand on 60% of pairs, recurrent lanes)" },
     },
     sets = new[] { 1, 2, 3 },
 }));
 
-// raw model input for the instance-inspection screen
-app.MapGet("/api/instance", (string airline, int set, int seed) =>
+// Excel workflow: download the instance as an editable workbook, upload an edited one back
+app.MapGet("/api/template.xlsx", (string? airline, int? set, int? seed, string? uploadId,
+    UploadStore uploads) =>
 {
-    var inst = Acsp.Data.InstanceGenerator.Generate(airline, set, seed);
+    var inst = uploads.Get(uploadId)
+        ?? Acsp.Data.InstanceGenerator.Generate(airline ?? "RC", set ?? 1, seed ?? 1);
+    return Results.File(InstanceXlsx.Build(inst),
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        inst.Name + ".xlsx");
+});
+
+app.MapPost("/api/upload", async (HttpRequest req, UploadStore uploads) =>
+{
+    using var ms = new MemoryStream();
+    await req.Body.CopyToAsync(ms);
+    string name = req.Query.TryGetValue("name", out var n) && n.Count > 0
+        ? Path.GetFileNameWithoutExtension(n[0]!) : "uploaded";
+    var res = InstanceXlsx.Read(ms.ToArray(), name);
+    var messages = res.Messages.Select(mfe => new
+    { severity = mfe.Severity, sheet = mfe.Sheet, row = mfe.Row, text = mfe.Text });
+    if (!res.Ok)
+        return Results.Json(new { ok = false, messages });
+    var inst = res.Instance!;
+    return Results.Json(new
+    {
+        ok = true,
+        uploadId = uploads.Add(inst),
+        name = inst.Name,
+        messages,
+        summary = new
+        {
+            airports = inst.Airports.Length,
+            fleets = inst.Fleets.Length,
+            aircraft = inst.Fleets.Sum(k => k.Count),
+            mandatory = inst.MandatoryFlights.Count(),
+            optional = inst.OptionalFlights.Count(),
+            external = inst.ExternalFlights.Count(),
+            ods = inst.Ods.Length,
+            demandT = Math.Round(inst.Ods.Sum(o => o.Weight), 1),
+        },
+    });
+});
+
+// autonomous network design: propose -> re-optimize -> evict, in rounds
+app.MapPost("/api/design", (DesignRequest req, SolveJobManager jobs, UploadStore uploads) =>
+{
+    var inst = uploads.Get(req.UploadId)
+        ?? Acsp.Data.InstanceGenerator.Generate(req.Airline, req.Set, req.Seed);
+    var job = jobs.StartDesign(req, inst);
+    return Results.Json(new { id = job.Id, instance = job.InstanceName });
+});
+
+// raw model input for the instance-inspection screen
+app.MapGet("/api/instance", (string? airline, int? set, int? seed, string? uploadId,
+    UploadStore uploads) =>
+{
+    var inst = uploads.Get(uploadId)
+        ?? Acsp.Data.InstanceGenerator.Generate(airline ?? "RC", set ?? 1, seed ?? 1);
     return Results.Json(new
     {
         name = inst.Name,
@@ -109,9 +168,9 @@ app.MapGet("/api/instance", (string airline, int set, int seed) =>
 
 app.MapGet("/api/jobs", (SolveJobManager jobs) => Results.Json(jobs.List()));
 
-app.MapPost("/api/solve", (SolveRequest req, SolveJobManager jobs) =>
+app.MapPost("/api/solve", (SolveRequest req, SolveJobManager jobs, UploadStore uploads) =>
 {
-    var job = jobs.Start(req);
+    var job = jobs.Start(req, uploads.Get(req.UploadId));
     return Results.Json(new { id = job.Id, instance = job.InstanceName });
 });
 
@@ -156,9 +215,10 @@ app.MapGet("/api/jobs/{id}/result", (string id, SolveJobManager jobs) =>
 });
 
 // planner assistant: propose optional flights for stranded demand and re-optimize (§2.1 paradigm)
-app.MapPost("/api/propose", (SolveRequest req, SolveJobManager jobs) =>
+app.MapPost("/api/propose", (SolveRequest req, SolveJobManager jobs, UploadStore uploads) =>
 {
-    var inst = Acsp.Data.InstanceGenerator.Generate(req.Airline, req.Set, req.Seed);
+    var inst = uploads.Get(req.UploadId)
+        ?? Acsp.Data.InstanceGenerator.Generate(req.Airline, req.Set, req.Seed);
     var solPath = Path.Combine(ResultsDir(),
         inst.Name + (req.Maintenance ? "-mnt" : "") + ".solution.json");
     var shipped = new double[inst.Ods.Length];

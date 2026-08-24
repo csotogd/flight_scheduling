@@ -112,14 +112,21 @@ public static class FeasibilityChecker
                 legVolume[lid] += tons * vpt;
             }
         }
+        // capacity/demand comparisons use a tolerance relative to the row scale: LP/MIP solvers
+        // enforce rows to their own relative feasibility tolerance, and a row aggregating many
+        // flow variables can legitimately sit above its bound by ~cap * 1e-6
+        // floor of 1e-4 t (0.1 kg): far below anything operationally meaningful
+        // floor of 1e-3 (a kilogram on tonne-scale rows): CPLEX/HiGHS enforce rows to their
+        // own relative tolerances, which on large-coefficient rows exceed 1e-4 absolute
+        double Tol(double scale) => Math.Max(1e-3, Math.Max(tol, 1e-5) * Math.Max(1, scale));
         foreach (var od in inst.Ods)
-            if (odShipped[od.Id] > od.Weight + tol)
+            if (odShipped[od.Id] > od.Weight + Tol(od.Weight))
                 v.Add($"od {od.Id}: shipped {odShipped[od.Id]:F3} > demand {od.Weight:F3} (CR-1-DEMAND)");
         foreach (var leg in inst.Legs)
         {
-            if (legWeight[leg.Id] > legWeightCap[leg.Id] + tol)
+            if (legWeight[leg.Id] > legWeightCap[leg.Id] + Tol(legWeightCap[leg.Id]))
                 v.Add($"leg {leg.Id}: weight {legWeight[leg.Id]:F3} > cap {legWeightCap[leg.Id]:F3} (CR-2-PAYLOAD)");
-            if (legVolumeCap[leg.Id] > 0 && legVolume[leg.Id] > legVolumeCap[leg.Id] + tol)
+            if (legVolumeCap[leg.Id] > 0 && legVolume[leg.Id] > legVolumeCap[leg.Id] + Tol(legVolumeCap[leg.Id]))
                 v.Add($"leg {leg.Id}: volume {legVolume[leg.Id]:F3} > cap {legVolumeCap[leg.Id]:F3} (CR-2-PAYLOAD)");
         }
 

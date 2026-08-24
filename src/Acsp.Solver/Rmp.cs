@@ -131,6 +131,11 @@ public sealed class Rmp : IDisposable
     // ---------------------------------------------------------------- columns
 
     /// <summary>Adds a cargo flow path column; returns false if it already exists.</summary>
+    /// <summary>Whether this exact column is already in the master (then its true reduced
+    /// cost is &lt;= 0 at LP optimality, whatever a pricer claims).</summary>
+    public bool ContainsPath(CargoPath p) => _pathIndex.ContainsKey(p.Key());
+    public bool ContainsString(FlightString s) => _stringIndex.ContainsKey(s.Key());
+
     public bool AddPath(CargoPath p)
     {
         var key = p.Key();
@@ -276,8 +281,52 @@ public sealed class Rmp : IDisposable
 
     public LpResult SolveLp() => _lp.SolveLp();
 
-    public LpResult SolveMipOnCurrentColumns(double timeLimitSeconds, double gap = 1e-4) =>
-        _lp.SolveMip(timeLimitSeconds, gap);
+    /// <summary>
+    /// Monetizes a fixed schedule: pins every string (and external booking) to the given
+    /// solution's selection and solves the LP, so the cargo flows are optimized over the
+    /// column pool generated so far. One warm LP solve, no pricing. Bounds are restored to
+    /// [0,1] afterwards (root state; callers under branching must reapply their state).
+    /// </summary>
+    public LpResult SolveLpWithSelectionFixed(Solution sol)
+    {
+        var want = sol.SelectedStrings.Select(s => s.Key()).ToHashSet();
+        foreach (var sc in _strings)
+        {
+            double v = want.Contains(sc.Str.Key()) ? 1 : 0;
+            _lp.SetColumnBounds(sc.Col, v, v);
+        }
+        foreach (var (fid, col) in _extCol)
+        {
+            double v = sol.SelectedExternalFlights.Contains(fid) ? 1 : 0;
+            _lp.SetColumnBounds(col, v, v);
+        }
+        var lp = SolveLp();
+        foreach (var sc in _strings) _lp.SetColumnBounds(sc.Col, 0, 1);
+        foreach (var (_, col) in _extCol) _lp.SetColumnBounds(col, 0, 1);
+        return lp;
+    }
+
+    public LpResult SolveMipOnCurrentColumns(double timeLimitSeconds, double gap = 1e-4,
+        Solution? mipStart = null) =>
+        _lp.SolveMip(timeLimitSeconds, gap, mipStart is null ? null : BuildMipStart(mipStart));
+
+    /// <summary>Sparse (column, value) warm start from a known feasible solution: selected
+    /// strings and external bookings at 1, path flows at their tonnes. Columns of the solution
+    /// that are not in the RMP are skipped (the start is partial anyway).</summary>
+    private List<(int Col, double Value)> BuildMipStart(Solution sol)
+    {
+        var start = new List<(int, double)>();
+        foreach (var s in sol.SelectedStrings)
+            if (_stringIndex.TryGetValue(s.Key(), out int i))
+                start.Add((_strings[i].Col, 1.0));
+        foreach (var (path, tonnes) in sol.Flows)
+            if (_pathIndex.TryGetValue(path.Key(), out int i))
+                start.Add((_paths[i].Col, tonnes));
+        foreach (var f in sol.SelectedExternalFlights)
+            if (_extCol.TryGetValue(f, out int col))
+                start.Add((col, 1.0));
+        return start;
+    }
 
     public MasterDuals GetDuals(LpResult res)
     {

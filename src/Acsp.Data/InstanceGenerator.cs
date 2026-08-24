@@ -292,6 +292,51 @@ public sealed class InstanceGenerator
         var hubs = _p.HubCodes.Select(AirportDb.Get).ToList();
         var raw = new List<OdDraft>();
         double sumTkm = 0;
+
+        if (_p.GravityPairShare > 0)
+        {
+            // gravity demand: score every ordered station pair with a distance-decayed random
+            // draw and keep the top GravityPairShare — near pairs almost always make the cut,
+            // far pairs sometimes do, and the share of covered pairs is exact
+            var scored = new List<(AirportInfo O, AirportInfo D, double Dist, double Score)>();
+            foreach (var o in _cargoDests)
+                foreach (var d in _cargoDests)
+                {
+                    if (o.Code == d.Code) continue;
+                    double dist = GreatCircle.Km(o, d);
+                    scored.Add((o, d, dist, _rng.NextDouble() * Math.Exp(-dist / 4000.0)));
+                }
+            int keep = (int)Math.Round(_p.GravityPairShare * scored.Count);
+            foreach (var (o, d, dist, _) in scored.OrderByDescending(x => x.Score).Take(keep))
+            {
+                // weekly recurrence: a lane ships several times per week, near lanes up to
+                // daily (BCN-BRU style), far lanes typically once or twice; occurrences are
+                // spread evenly across the week, each an independent shipment
+                double freqCeiling = 1 + 6 * Math.Exp(-dist / 6000.0);
+                int freq = 1 + (int)(freqCeiling * Math.Pow(_rng.NextDouble(), 1.5));
+                freq = Math.Min(freq, 7);
+                int baseAvail = depsByAirport.TryGetValue(o.Code, out var deps)
+                    ? period.Wrap(deps[_rng.Next(deps.Length)] - 60 - _rng.Next(18 * 60))
+                    : _rng.Next(period.N);
+                for (int occ = 0; occ < freq; occ++)
+                {
+                    double w = Math.Exp(0.7 + 1.0 * Gaussian());
+                    w = Math.Clamp(w, 0.1, 60);
+                    double rate = (100 + dist * (0.28 + 0.22 * _rng.NextDouble())) * _p.RateMultiplier;
+                    int days = _rng.Next(_p.MinDeliveryDays, _p.MaxDeliveryDays + 1);
+                    int avail = period.Wrap(baseAvail + occ * (period.N / freq)
+                        + _rng.Next(-120, 121));
+                    raw.Add(new OdDraft(o.Code, d.Code, avail, days * 1440,
+                        w, 4.5 + 3.5 * _rng.NextDouble(), Math.Round(rate, 2)));
+                    sumTkm += w * dist;
+                }
+            }
+            double gscale = _p.RevenueTkmTarget / sumTkm;
+            foreach (var od in raw)
+                _ods.Add(od with { Weight = Math.Round(Math.Max(0.05, od.Weight * gscale), 3) });
+            return;
+        }
+
         for (int i = 0; i < _p.NumOds; i++)
         {
             // dense (integrator) demand: every station originates O&Ds, destinations spread

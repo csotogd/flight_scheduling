@@ -9,10 +9,147 @@ return args switch
 {
     ["generate", .. var rest] => Generate(rest),
     ["solve", .. var rest] => SolveCmd(rest),
+    ["design", .. var rest] => Design(rest),
+    ["cover", .. var rest] => Cover(rest),
+    ["template", .. var rest] => Template(rest),
     ["benchmark", .. var rest] => Benchmark(rest),
     ["diag", .. var rest] => Diag(rest),
     _ => Usage(),
 };
+
+static Instance? LoadInstance(string path)
+{
+    if (!path.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
+        return InstanceJson.Load(path);
+    var res = InstanceXlsx.Read(File.ReadAllBytes(path),
+        Path.GetFileNameWithoutExtension(path));
+    foreach (var mfe in res.Messages)
+        Console.WriteLine($"  [{mfe.Severity}] {mfe.Sheet} row {mfe.Row}: {mfe.Text}");
+    if (!res.Ok) Console.WriteLine("import rejected: fix the errors above and retry");
+    return res.Instance;
+}
+
+static int Cover(string[] a)
+{
+    var inst = LoadInstance(a[0]);
+    if (inst is null) return 2;
+    var res = CoverConstructor.Build(inst);
+    Console.WriteLine($"mandatory flights: {inst.MandatoryFlights.Count()}");
+    for (int k = 0; k < inst.Fleets.Length; k++)
+        Console.WriteLine($"  {inst.Fleets[k].Code}: {res.FlightsPerFleet[k]} flights, " +
+            $"{res.HoursPerFleet[k]:F0}h used of {inst.Fleets[k].Count * 168}h " +
+            $"({inst.Fleets[k].Count} a/c)");
+    foreach (var u in res.Uncovered.Take(15))
+        Console.WriteLine($"  UNCOVERED {u.Code}: {u.Reason}");
+    if (res.Solution is null)
+    {
+        Console.WriteLine($"cover FAILED: {res.Uncovered.Count} mandatory flights uncovered");
+        return 2;
+    }
+    SolutionAssembler.AssembleRotations(inst, res.Solution);
+    var feas = FeasibilityChecker.Check(inst, res.Solution);
+    var aircraft = res.Solution.Rotations
+        .GroupBy(r => r.FleetId)
+        .ToDictionary(g => g.Key, g => g.Sum(r => r.AircraftNeeded(inst)));
+    Console.WriteLine("rotation aircraft per fleet: " + string.Join(", ",
+        aircraft.Select(kv => $"{inst.Fleets[kv.Key].Code} {kv.Value}/{inst.Fleets[kv.Key].Count}")));
+    Console.WriteLine($"feasibility: {(feas.IsFeasible ? "OK" : feas.ToString())}");
+    Console.WriteLine($"seed profit: {res.Solution.Profit(inst):F0} " +
+        $"(fixed {res.Solution.FixedStringCosts(inst):F0} + aircraft {res.Solution.AircraftCosts(inst):F0})");
+    return feas.IsFeasible ? 0 : 1;
+}
+
+static int Template(string[] a)
+{
+    if (a.Length == 0) { Console.WriteLine("usage: acsp template OUT.xlsx [--from INSTANCE.json | --airline X --set N --seed N]"); return 1; }
+    string from = Opt(a, "from", "");
+    var inst = from.Length > 0
+        ? InstanceJson.Load(from)
+        : InstanceGenerator.Generate(Opt(a, "airline", "RC"), int.Parse(Opt(a, "set", "1")),
+            int.Parse(Opt(a, "seed", "1")));
+    File.WriteAllBytes(a[0], InstanceXlsx.Build(inst));
+    Console.WriteLine($"{a[0]}: {inst.Flights.Length} flights, {inst.Ods.Length} ODs " +
+        $"({inst.Name}) — edit and re-import with 'solve' or 'design'");
+    return 0;
+}
+
+static int Design(string[] a)
+{
+    var inst = LoadInstance(a[0]);
+    if (inst is null) return 2;
+    var opt = new DesignOptions
+    {
+        BatchSize = int.Parse(Opt(a, "batch", "100")),
+        MaxRounds = int.Parse(Opt(a, "rounds", "8")),
+        StopThreshold = double.Parse(Opt(a, "stop", "0.003")),
+        EvictAfterRounds = int.Parse(Opt(a, "evict", "2")),
+        RoundTimeLimitSeconds = double.Parse(Opt(a, "round-time", "180")),
+        GapTarget = double.Parse(Opt(a, "gap", "0.005")),
+        WithMaintenance = Flag(a, "maintenance"),
+        IncludeDirect = !Flag(a, "no-direct"),
+        IncludeExternal = !Flag(a, "no-external"),
+        IncludeTrunks = !Flag(a, "no-trunks"),
+        AmnestyRounds = int.Parse(Opt(a, "amnesty", "4")),
+        FinalTimeLimitSeconds = double.Parse(Opt(a, "final-time", "900")),
+        StopAfterFlatRounds = int.Parse(Opt(a, "flat", "3")),
+        ConsolidateTinyFar = Flag(a, "consolidate"),
+        SeedWithCover = !Flag(a, "no-cover"),
+        LoadSeedFlows = !Flag(a, "no-seed-load"),
+        ColGenGapExtend = Flag(a, "gap-extend"),
+        ColGenGapThreshold = double.Parse(Opt(a, "gap-extend-threshold", "0.03")),
+        TinyMaxTonnes = double.Parse(Opt(a, "tiny-max", "1.0")),
+        TinyFarMinKm = double.Parse(Opt(a, "tiny-km", "4000")),
+        ZoneRotation = Flag(a, "zones"),
+    };
+    var designer = new NetworkDesigner(inst, opt);
+    var lastReport = DateTime.MinValue;
+    designer.Progress += p =>
+    {
+        if (p.Solver is { } s)
+        {
+            if ((DateTime.Now - lastReport).TotalSeconds < 2 && !s.Phase.StartsWith("incumbent"))
+                return;
+            lastReport = DateTime.Now;
+            Console.WriteLine($"  r{p.Round} [{s.ElapsedSeconds,6:F1}s] nodes {s.NodesExplored,5} " +
+                $"inc {s.Incumbent,14:F0} bound {s.Bound,14:F0} {s.Phase}");
+        }
+        else
+            Console.WriteLine($"  == round {p.Round}: {p.Phase}");
+    };
+    Console.WriteLine($"autonomous design on {inst.Name} " +
+        $"(batch {opt.BatchSize}, up to {opt.MaxRounds} rounds, " +
+        $"lp backend: {Acsp.Solver.Lp.LpSolverFactory.DefaultBackendName})");
+    var res = designer.Run();
+    Console.WriteLine($"\nstop: {res.StopReason}");
+    Console.WriteLine($"base profit {res.BaseProfit,14:F0}");
+    foreach (var r in res.Rounds)
+        Console.WriteLine($"  round {r.Round}: profit {r.Profit,14:F0} gap {r.Gap:P2} " +
+            $"flights {r.FlightsInModel} +{r.Added} flown {r.Flown} evicted {r.Evicted} " +
+            $"({r.Seconds:F0}s) {r.Note}");
+    if (res.Best.Best is null)
+    {
+        Console.WriteLine("no solution found; nothing to save " +
+            "(try a larger --round-time so the base solve can find its first schedule)");
+        return 2;
+    }
+    var feas = FeasibilityChecker.Check(res.BestInstance, res.Best.Best);
+    Console.WriteLine($"feasibility: {(feas.IsFeasible ? "OK" : feas.ToString())}");
+    double delta = res.Best.Objective - res.BaseProfit;
+    Console.WriteLine($"best: round {res.BestRound}, profit {res.Best.Objective:F0} " +
+        $"({(delta >= 0 ? "+" : "")}{delta:F0}, " +
+        $"{(res.BaseProfit != 0 ? delta / Math.Abs(res.BaseProfit) : 0):P2} vs base)");
+    var accepted = res.Proposals.Where(p => p.Status == "accepted").ToList();
+    Console.WriteLine($"proposals: {res.Proposals.Count} tried, {accepted.Count} accepted");
+    foreach (var p in accepted)
+        Console.WriteLine($"  {p.Code}: {string.Join("->", p.Route)} for {p.TargetPair} " +
+            $"({p.TargetTonnes:F0}t) — {p.Reason}");
+    string outDir = Opt(a, "out", "results");
+    var solPath = Path.Combine(outDir, res.BestInstance.Name.Replace("+prop", "") +
+        "+design.solution.json");
+    SolutionJson.Save(res.BestInstance, res.Best, solPath, SolutionJson.DesignReport(res));
+    Console.WriteLine($"best solution written to {solPath}");
+    return 0;
+}
 
 static int Diag(string[] a)
 {
@@ -81,7 +218,10 @@ static int Usage()
 
         usage:
           acsp generate [--airline RC|IC|MI|EX|all] [--set 1|2|3|all] [--seeds N] [--out DIR]
-          acsp solve INSTANCE.json [--maintenance] [--time-limit SEC] [--gap G] [--out DIR]
+          acsp solve INSTANCE.json|.xlsx [--maintenance] [--time-limit SEC] [--gap G] [--out DIR]
+          acsp design INSTANCE.json|.xlsx [--batch 100] [--rounds 8] [--stop 0.003] [--evict 2]
+                      [--round-time SEC] [--gap G] [--maintenance] [--out DIR]
+          acsp template OUT.xlsx [--from INSTANCE.json | --airline X --set N --seed N]
           acsp benchmark [--airlines RC,IC,MI] [--sets 1,2,3] [--seeds N] [--maintenance]
                          [--time-limit SEC] [--gap G] [--out DIR]
         """);
@@ -120,7 +260,8 @@ static int Generate(string[] a)
 
 static int SolveCmd(string[] a)
 {
-    var inst = InstanceJson.Load(a[0]);
+    var inst = LoadInstance(a[0]);
+    if (inst is null) return 2;
     bool mnt = Flag(a, "maintenance");
     double timeLimit = double.Parse(Opt(a, "time-limit", "1800"));
     double gap = double.Parse(Opt(a, "gap", "0.005"));
@@ -144,8 +285,8 @@ static BpcResult RunOne(Instance inst, bool mnt, double timeLimit, double gap, b
         GapTarget = gap,
         TimeLimitSeconds = timeLimit,
         MipHeuristicFrequency = noHeuristic ? 0 : 40,
-        // large instances need a bigger MIP-heuristic budget to produce the first incumbent
-        MipHeuristicTimeLimit = Math.Max(20, inst.Flights.Length / 12),
+        // heuristic budget proportional to the solve budget (size-independent)
+        MipHeuristicTimeLimit = Math.Max(20, timeLimit * 0.3),
     });
     var lastReport = DateTime.MinValue;
     bpc.Progress += p =>
@@ -158,7 +299,8 @@ static BpcResult RunOne(Instance inst, bool mnt, double timeLimit, double gap, b
             $"cols {p.Paths + p.Strings,6} cuts {p.Cuts,4}  {p.Phase}");
     };
     if (verbose)
-        Console.WriteLine($"solving {inst.Name} (maintenance: {mnt}) ...");
+        Console.WriteLine($"solving {inst.Name} (maintenance: {mnt}, " +
+            $"lp backend: {Acsp.Solver.Lp.LpSolverFactory.DefaultBackendName}) ...");
     var res = bpc.Solve();
     if (verbose)
     {

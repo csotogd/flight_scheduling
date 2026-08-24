@@ -8,7 +8,7 @@
 </head>
 <body>
 <header>
-  <h1>ACSP <span class="sub">Air cargo scheduling — Derigs &amp; Friederichs (2013)</span></h1>
+  <h1>ACSP <span class="sub">Air cargo scheduling — first version</span></h1>
   <div class="controls">
     <select id="airline"></select>
     <select id="set">
@@ -20,10 +20,33 @@
     <label><input id="maintenance" type="checkbox"> maintenance</label>
     <label>limit <input id="timeLimit" type="number" value="120" min="5" step="5"> s</label>
     <button id="solveBtn">Solve</button>
+    <button id="designBtn" title="Autonomous design: propose candidate flights in rounds, re-optimize, keep what pays off">Auto-design</button>
+    <label>batch <input id="designBatch" type="number" value="100" min="5" step="5"></label>
+    <label>rounds <input id="designRounds" type="number" value="6" min="1" max="30"></label>
     <button id="inputBtn">View input data</button>
+    <a id="templateBtn" class="btn-link" href="/api/template.xlsx" download>Excel ↓</a>
+    <button id="uploadBtn" title="Upload an edited instance workbook (same format as the Excel download)">Upload Excel…</button>
+    <input type="file" id="uploadFile" accept=".xlsx" hidden>
+    <span id="sourceBadge" class="hidden badge">uploaded: <b id="sourceName"></b>
+      <button id="sourceClear" class="small">×</button></span>
     <select id="savedSolutions"><option value="">— saved solutions —</option></select>
   </div>
 </header>
+
+<div id="uploadPanel" class="panel hidden">
+  <div class="panel-title">Excel import <button id="uploadCloseBtn" class="small">close</button></div>
+  <div id="uploadSummary" class="stats-line"></div>
+  <table id="uploadMessages"></table>
+</div>
+
+<div id="designPanel" class="panel hidden">
+  <div class="panel-title">Autonomous network design
+    <span id="designStatus" class="sub"></span></div>
+  <div id="designSummary" class="stats-line"></div>
+  <div id="designRoundsChart" class="rounds-chart"></div>
+  <div class="table-scroll"><table id="designRoundsTable"></table></div>
+  <div class="table-scroll"><table id="designProposals"></table></div>
+</div>
 
 <section id="inputSection" class="hidden">
   <div class="panel">

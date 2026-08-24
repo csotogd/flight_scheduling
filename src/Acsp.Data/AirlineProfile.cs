@@ -27,7 +27,9 @@ public sealed record AirlineProfile(
     ExternalSpec? External,
     int NumExternalDestinations,
     double RateMultiplier = 1.0,  // express carriers charge a premium yield
-    bool DenseDemand = false)     // point-to-point O&Ds from every station, not hub-anchored
+    bool DenseDemand = false,     // point-to-point O&Ds from every station, not hub-anchored
+    double GravityPairShare = 0)  // >0: this share of ALL ordered station pairs gets demand,
+                                  // sampled with distance-decaying probability (NumOds ignored)
 {
     public static readonly AirlineProfile RC = new(
         Code: "RC", HubCodes: ["HKG"], NumCargoDestinations: 23,
@@ -127,9 +129,46 @@ public sealed record AirlineProfile(
         External: null, NumExternalDestinations: 0,
         RateMultiplier: 2.2, DenseDemand: true);
 
+    /// <summary>
+    /// The GI archetype brought closer to the real network: Brussels joins the hub set
+    /// (5 hubs) and the demand matrix follows a gravity model — 60% of ALL ordered station
+    /// pairs carry demand, closer pairs more likely, so cargo routinely needs multi-hub
+    /// itineraries (LEJ→BRU→CVG style) to reach its destination.
+    /// </summary>
+    public static readonly AirlineProfile RLA = GI with
+    {
+        Code = "RLA",
+        // 9 hubs: Europe (LEJ, BRU), US (CVG, MIA), Asia (HKG, SIN), Middle East (BAH, DXB),
+        // Latin America (PTY)
+        HubCodes = ["LEJ", "BRU", "CVG", "MIA", "HKG", "SIN", "BAH", "DXB", "PTY"],
+        GravityPairShare = 0.6,
+        MinDeliveryDays = 2, MaxDeliveryDays = 6,
+        RevenueTkmTarget = 240_000_000,
+        // richer fleet mix (6 types incl. mid-size and feeder aircraft, 154 airplanes)
+        Fleets =
+        [
+            new FleetSpec("B777F", 26, 102, 650, 9200, 900, 130_000, 5.5, 3800, 25_000,
+                MntCycles: 40, MntFlightMinutes: 5400, MntElapsedMinutes: 2 * 10080, MntDurationMinutes: 600),
+            new FleetSpec("B767F", 30, 52, 438, 6000, 850, 70_000, 3.6, 2500, 15_000,
+                MntCycles: 44, MntFlightMinutes: 4800, MntElapsedMinutes: 2 * 10080, MntDurationMinutes: 480),
+            new FleetSpec("A330F", 18, 61, 475, 7400, 880, 85_000, 4.2, 2800, 18_000,
+                MntCycles: 42, MntFlightMinutes: 5000, MntElapsedMinutes: 2 * 10080, MntDurationMinutes: 540),
+            new FleetSpec("A300F", 30, 45, 320, 6600, 840, 60_000, 3.4, 2200, 12_000,
+                MntCycles: 44, MntFlightMinutes: 4500, MntElapsedMinutes: 2 * 10080, MntDurationMinutes: 480),
+            new FleetSpec("B757F", 25, 29, 239, 5800, 850, 45_000, 2.6, 1500, 10_000,
+                MntCycles: 44, MntFlightMinutes: 4500, MntElapsedMinutes: 2 * 10080, MntDurationMinutes: 420),
+            new FleetSpec("B737F", 25, 23, 190, 3700, 820, 38_000, 2.4, 1200, 9_000,
+                MntCycles: 48, MntFlightMinutes: 4200, MntElapsedMinutes: 2 * 10080, MntDurationMinutes: 420),
+        ],
+        // the base itinerary starts with only 50% of its flights mandatory: set I is
+        // 625 mandatory + 625 optional out of the 1,250-flight schedule
+        MandatoryFlights = 625,
+        OptionalFlightsSetII = 1250,
+    };
+
     public static AirlineProfile Get(string code) => code.ToUpperInvariant() switch
     {
-        "RC" => RC, "IC" => IC, "MI" => MI, "EX" => EX, "GI" => GI,
+        "RC" => RC, "IC" => IC, "MI" => MI, "EX" => EX, "GI" => GI, "RLA" => RLA,
         _ => throw new ArgumentException($"Unknown airline profile '{code}'"),
     };
 }

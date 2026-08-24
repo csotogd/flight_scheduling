@@ -10,14 +10,41 @@ namespace Acsp.Data;
 /// </summary>
 public static class SolutionJson
 {
-    public static void Save(Instance inst, BpcResult res, string path)
+    public static void Save(Instance inst, BpcResult res, string path, object? design = null)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
-        File.WriteAllText(path, JsonSerializer.Serialize(Build(inst, res),
+        File.WriteAllText(path, JsonSerializer.Serialize(Build(inst, res, design),
             new JsonSerializerOptions { WriteIndented = false }));
     }
 
-    public static object Build(Instance inst, BpcResult res)
+    /// <summary>Serializable autonomous-design report (rounds + proposal lifecycle) for the
+    /// 'design' property of Build/Save. Shared by the CLI and the web job runner.</summary>
+    public static object DesignReport(DesignResult res) => new
+    {
+        stopReason = res.StopReason,
+        baseProfit = res.BaseProfit,
+        bestRound = res.BestRound,
+        rounds = res.Rounds.Select(r => new
+        {
+            round = r.Round, profit = Fin(r.Profit), bound = Fin(r.Bound),
+            gap = Fin(r.Gap), flights = r.FlightsInModel, added = r.Added,
+            flown = r.Flown, evicted = r.Evicted, seconds = Math.Round(r.Seconds, 1),
+            note = r.Note,
+        }),
+        proposals = res.Proposals.Select(t => new
+        {
+            code = t.Code, route = t.Route, depMinute = t.DepMinute,
+            targetPair = t.TargetPair, targetTonnes = t.TargetTonnes, reason = t.Reason,
+            addedRound = t.AddedRound, status = t.Status,
+            evictedRound = t.EvictedRound < 0 ? (int?)null : t.EvictedRound,
+        }),
+    };
+
+    private static double? Fin(double v) => double.IsFinite(v) ? Math.Round(v, 4) : null;
+
+    /// <param name="design">Optional autonomous-design report (rounds + proposal lifecycle),
+    /// embedded verbatim under the 'design' property.</param>
+    public static object Build(Instance inst, BpcResult res, object? design = null)
     {
         var sol = res.Best ?? throw new ArgumentException("no solution");
         var p = inst.Period;
@@ -155,6 +182,7 @@ public static class SolutionJson
             {
                 od = f.Path.OdId, legs = f.Path.LegIds, tonnes = Math.Round(f.Tonnes, 3),
             }),
+            design,
             periodMinutes = p.N,
         };
     }

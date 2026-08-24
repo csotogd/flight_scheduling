@@ -7,6 +7,8 @@ const pct = n => n == null ? "—" : (100 * n).toFixed(2) + " %";
 
 let currentJob = null;
 let series = []; // {t, incumbent, bound}
+let upload = null; // {uploadId, name} when an Excel instance is active
+let liveRounds = []; // rounds streamed while a design job runs
 let worldPolys = []; // simplified country outlines [[lon,lat],...]
 let tsSelectedStation = null; // time-space: highlight flights touching this airport id
 let mapLegEls = [];           // map legs with their times, for the hourly scrubber
@@ -23,10 +25,18 @@ async function init() {
     $("airline").appendChild(o);
   }
   $("solveBtn").onclick = startSolve;
+  $("designBtn").onclick = startDesign;
   $("cancelBtn").onclick = () => currentJob && fetch(`/api/jobs/${currentJob}/cancel`, { method: "POST" });
   $("proposeBtn").onclick = proposeAndResolve;
   $("inputBtn").onclick = showInput;
   $("inputCloseBtn").onclick = () => $("inputSection").classList.add("hidden");
+  $("uploadBtn").onclick = () => $("uploadFile").click();
+  $("uploadFile").onchange = uploadExcel;
+  $("uploadCloseBtn").onclick = () => $("uploadPanel").classList.add("hidden");
+  $("sourceClear").onclick = () => setUpload(null);
+  for (const id of ["airline", "set", "seed"])
+    $(id).onchange = updateTemplateLink;
+  updateTemplateLink();
   $("mapHourMode").onchange = () => {
     $("mapHour").disabled = !$("mapHourMode").checked;
     applyMapHour();
@@ -84,8 +94,9 @@ async function showInput() {
   const req = formRequest();
   $("inputBtn").disabled = true;
   try {
-    const d = await (await fetch(
-      `/api/instance?airline=${req.airline}&set=${req.set}&seed=${req.seed}`)).json();
+    const d = await (await fetch(upload
+      ? `/api/instance?uploadId=${upload.uploadId}`
+      : `/api/instance?airline=${req.airline}&set=${req.set}&seed=${req.seed}`)).json();
     $("inputSection").classList.remove("hidden");
     $("inputName").textContent = d.name +
       ` — weekly periodic schedule, ${d.periodMinutes.toLocaleString()} min horizon`;
@@ -156,6 +167,7 @@ function formRequest() {
     maintenance: $("maintenance").checked,
     timeLimitSeconds: +$("timeLimit").value,
     gapTarget: 0.005,
+    uploadId: upload?.uploadId ?? null,
   };
 }
 
@@ -165,6 +177,140 @@ async function startSolve() {
     body: JSON.stringify(formRequest()),
   })).json();
   followJob(job);
+}
+
+/* ------------------------------------------------------ Excel upload workflow */
+
+function updateTemplateLink() {
+  $("templateBtn").href = upload
+    ? `/api/template.xlsx?uploadId=${upload.uploadId}`
+    : `/api/template.xlsx?airline=${$("airline").value}&set=${$("set").value}&seed=${$("seed").value}`;
+}
+
+function setUpload(u) {
+  upload = u;
+  $("sourceBadge").classList.toggle("hidden", !u);
+  if (u) $("sourceName").textContent = u.name;
+  for (const id of ["airline", "set", "seed"]) $(id).disabled = !!u;
+  updateTemplateLink();
+}
+
+async function uploadExcel(e) {
+  const file = e.target.files[0];
+  e.target.value = "";
+  if (!file) return;
+  const res = await (await fetch(`/api/upload?name=${encodeURIComponent(file.name)}`, {
+    method: "POST", body: file,
+  })).json();
+  $("uploadPanel").classList.remove("hidden");
+  const msgs = res.messages || [];
+  $("uploadMessages").innerHTML = msgs.length
+    ? "<tr><th>severity</th><th>sheet</th><th>row</th><th>message</th></tr>" +
+      msgs.map(mfe => `<tr${mfe.severity === "error" ? "" : ' class="dim"'}>
+        <td>${mfe.severity}</td><td>${mfe.sheet}</td><td>${mfe.row || ""}</td><td>${mfe.text}</td></tr>`).join("")
+    : "";
+  if (!res.ok) {
+    setUpload(null);
+    $("uploadSummary").textContent =
+      `❌ ${file.name} rejected: ${msgs.filter(mfe => mfe.severity === "error").length} error(s). ` +
+      "Fix them in Excel and upload again.";
+    return;
+  }
+  setUpload({ uploadId: res.uploadId, name: res.name });
+  const s = res.summary;
+  $("uploadSummary").textContent =
+    `✓ ${res.name}: ${s.airports} airports, ${s.fleets} fleets (${s.aircraft} aircraft), ` +
+    `${s.mandatory} mandatory + ${s.optional} optional + ${s.external} external flights, ` +
+    `${s.ods} O&Ds (${fmt1(s.demandT)} t)` +
+    (msgs.length ? ` — ${msgs.length} warning(s) below` : "") +
+    ". Solve, Auto-design and View input now use this instance.";
+  $("uploadPanel").scrollIntoView({ block: "nearest" });
+}
+
+/* --------------------------------------------------- autonomous design mode */
+
+async function startDesign() {
+  const req = formRequest();
+  const job = await (await fetch("/api/design", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      airline: req.airline, set: req.set, seed: req.seed, maintenance: req.maintenance,
+      roundTimeLimitSeconds: req.timeLimitSeconds, gapTarget: req.gapTarget,
+      uploadId: req.uploadId,
+      batch: +$("designBatch").value, maxRounds: +$("designRounds").value,
+      stopThreshold: 0.003, evictAfter: 2,
+    }),
+  })).json();
+  liveRounds = [];
+  $("designPanel").classList.remove("hidden");
+  $("designStatus").textContent = " running…";
+  $("designSummary").textContent = "round 0: solving the base schedule";
+  $("designRoundsChart").innerHTML = "";
+  $("designProposals").innerHTML = "";
+  followJob(job);
+}
+
+function designPhase(e) {
+  if (e.phase === "proposing")
+    $("designSummary").textContent =
+      `round ${e.round}: proposing candidate flights and re-optimizing…`;
+  else if (e.phase === "round-done" && !liveRounds.includes(e.round)) {
+    liveRounds.push(e.round);
+    $("designSummary").textContent = `round ${e.round} finished, ` +
+      (e.round < +$("designRounds").value ? `starting round ${e.round + 1}…` : "wrapping up…");
+  }
+}
+
+function renderDesign(d) {
+  $("designPanel").classList.remove("hidden");
+  $("designStatus").textContent = " " + d.stopReason;
+  const best = d.rounds.find(r => r.round === d.bestRound);
+  const delta = best.profit - d.baseProfit;
+  const accepted = d.proposals.filter(p => p.status === "accepted");
+  $("designSummary").textContent =
+    `base profit $${fmt(d.baseProfit)} → best $${fmt(best.profit)} at round ${d.bestRound} ` +
+    `(${delta >= 0 ? "+" : ""}${fmt(delta)}, ${(100 * delta / Math.abs(d.baseProfit)).toFixed(1)} %). ` +
+    `${d.proposals.length} candidate flights tried, ${accepted.length} accepted into the network.`;
+
+  const profits = d.rounds.map(r => r.profit).filter(v => v != null);
+  const pMin = Math.min(...profits, d.baseProfit), pMax = Math.max(...profits, d.baseProfit);
+  const H = v => pMax === pMin ? 60 : 8 + 72 * (v - pMin) / (pMax - pMin);
+  $("designRoundsChart").innerHTML = d.rounds.map(r => {
+    const cls = r.round === 0 ? "base" : r.round === d.bestRound ? "best" : "";
+    const tip = `round ${r.round}: profit $${fmt(r.profit)}, gap ${r.gap != null ? (100 * r.gap).toFixed(2) + "%" : "—"}, ` +
+      `${r.flights} flights (+${r.added} proposed, ${r.flown} flown, ${r.evicted} evicted), ${r.seconds}s — ${r.note}`;
+    return `<div class="rbar ${cls}" title="${tip}">
+      <div class="fill" style="height:${H(r.profit).toFixed(0)}px"></div>
+      <div>${r.round === 0 ? "base" : "r" + r.round}</div></div>`;
+  }).join("");
+
+  $("designRoundsTable").innerHTML =
+    "<tr><th>round</th><th>profit $</th><th>Δ</th><th>gap</th><th>flights</th>" +
+    "<th>proposed</th><th>flown</th><th>evicted</th><th>time s</th><th>note</th></tr>" +
+    d.rounds.map((r, i) => {
+      const prev = i > 0 ? d.rounds[i - 1].profit : null;
+      const delta = prev != null && r.profit != null
+        ? (100 * (r.profit - prev) / Math.abs(prev)).toFixed(2) + " %" : "—";
+      return `<tr${r.round === d.bestRound ? ' style="font-weight:bold"' : ""}>
+        <td>${r.round === 0 ? "base" : "r" + r.round}</td>
+        <td>${fmt(r.profit)}</td><td>${delta}</td>
+        <td>${r.gap != null ? (100 * r.gap).toFixed(2) + " %" : "—"}</td>
+        <td>${r.flights}</td><td>${r.added ? "+" + r.added : "—"}</td>
+        <td>${r.flown || "—"}</td><td>${r.evicted || "—"}</td>
+        <td>${fmt1(r.seconds)}</td><td>${r.note}</td></tr>`;
+    }).join("");
+
+  const order = { accepted: 0, testing: 1, evicted: 2 };
+  const rows = [...d.proposals].sort((a, b) =>
+    (order[a.status] - order[b.status]) || b.targetTonnes - a.targetTonnes);
+  $("designProposals").innerHTML =
+    "<tr><th>flight</th><th>route</th><th>hub departure</th><th>for</th><th>target t</th>" +
+    "<th>reason</th><th>round</th><th>status</th></tr>" +
+    rows.map(p => `<tr${p.status === "evicted" ? ' class="dim"' : ""}>
+      <td>${p.code}</td><td>${p.route.join(" → ")}</td><td>${fmtTime(p.depMinute)}</td>
+      <td>${p.targetPair}</td><td>${fmt1(p.targetTonnes)}</td><td>${p.reason}</td>
+      <td>r${p.addedRound}${p.evictedRound ? "–r" + p.evictedRound : ""}</td>
+      <td><span class="st st-${p.status}">${p.status}</span></td></tr>`).join("");
 }
 
 async function proposeAndResolve() {
@@ -204,7 +350,9 @@ function followJob(job) {
   const es = new EventSource(`/api/jobs/${job.id}/events`);
   es.onmessage = async ev => {
     const e = JSON.parse(ev.data);
-    if (e.type === "progress") {
+    if (e.type === "design-phase") {
+      designPhase(e);
+    } else if (e.type === "progress") {
       $("progressStats").textContent =
         `t ${e.t}s   nodes ${e.nodes}   incumbent ${fmt(e.incumbent)}   ` +
         `bound ${fmt(e.bound)}   gap ${e.gap != null ? pct(e.gap) : "—"}   ` +
@@ -328,8 +476,11 @@ function drawConvergence() {
 
 function renderSolution(sol) {
   $("dashboard").classList.remove("hidden");
-  const solName = sol.instance + (sol.withMaintenance ? "-mnt" : "");
+  const solName = (sol.design ? sol.instance.replace("+prop", "") + "+design" : sol.instance)
+    + (sol.withMaintenance ? "-mnt" : "");
   $("xlsxBtn").href = `/api/solutions/${encodeURIComponent(solName)}/itinerary.xlsx`;
+  if (sol.design) renderDesign(sol.design);
+  else $("designPanel").classList.add("hidden");
   renderKpis(sol);
   renderMap(sol);
   renderTimeSpace(sol);
@@ -483,6 +634,10 @@ function renderKpis(sol) {
   const shipped = sol.ods.reduce((a, o) => a + o.shippedT, 0);
   const demand = sol.ods.reduce((a, o) => a + o.demandT, 0);
   const aircraft = sol.rotations.reduce((a, r) => a + r.aircraft, 0);
+  // legs actually operated: every leg of a selected own flight, plus external legs carrying load
+  const flownLegs = sol.flights.reduce((a, f) => a + (f.kind === "external"
+    ? f.legs.filter(l => l.loadT > 0).length
+    : f.selected ? f.legs.length : 0), 0);
   const totalCosts = sol.pnl.variableCosts + sol.pnl.fixedFlightCosts +
     sol.pnl.aircraftCosts + sol.pnl.externalCosts;
   const kpis = [
@@ -492,6 +647,7 @@ function renderKpis(sol) {
     ["Cargo shipped", fmt1(shipped) + " t"],
     ["Demand served", (100 * shipped / demand).toFixed(1) + " %"],
     ["Aircraft", aircraft],
+    ["Legs flown", fmt(flownLegs)],
     ["Gap", pct(sol.stats.gap)],
     ["B&B nodes", fmt(sol.stats.nodes)],
     ["Time", fmt1(sol.stats.seconds) + " s"],

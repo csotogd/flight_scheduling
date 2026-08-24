@@ -79,3 +79,20 @@ tr.dim td { color: #999999; }
 .btn-link { background: #e8e8e8; color: #222222; border: 1px solid #999999;
   padding: 3px 8px; font-size: 13px; text-decoration: none; }
 .btn-link:hover { background: #d8d8d8; }
+
+#designBtn { background: #007744; color: #ffffff; border-color: #007744; font-weight: bold; }
+#designBtn:hover { background: #005c34; }
+.badge { background: #eef6ee; border: 1px solid #77aa77; color: #225522;
+  padding: 3px 8px; font-size: 12px; }
+.rounds-chart { display: flex; align-items: flex-end; gap: 6px; height: 90px;
+  margin: 8px 0 14px; }
+.rounds-chart .rbar { flex: 1; max-width: 90px; display: flex; flex-direction: column;
+  justify-content: flex-end; height: 100%; text-align: center; font-size: 10px; color: #444444; }
+.rounds-chart .rbar .fill { background: #66bb88; border: 1px solid #338855; }
+.rounds-chart .rbar.best .fill { background: #007744; }
+.rounds-chart .rbar.base .fill { background: #bbbbbb; border-color: #999999; }
+.rounds-chart .rbar.running .fill { background: none; border: 1px dashed #338855; }
+.st { padding: 1px 6px; font-size: 11px; border: 1px solid; }
+.st-accepted { background: #e2f2e2; border-color: #338855; color: #1d5c38; }
+.st-evicted { background: #f2f2f2; border-color: #aaaaaa; color: #777777; }
+.st-testing { background: #e6f0fa; border-color: #4488cc; color: #22557f; }

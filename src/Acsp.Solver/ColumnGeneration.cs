@@ -48,16 +48,36 @@ public sealed class ColumnGeneration
         };
     }
 
-    public sealed record NodeResult(LpResult Lp, ColGenStats Stats);
+    /// <param name="DeadlineHit">Column generation was interrupted by the caller's deadline;
+    /// Lp.Objective is then NOT a valid dual bound — use DualBound instead.</param>
+    /// <param name="DualBound">Valid upper bound on the true node LP: the converged LP value,
+    /// or on deadline the Farley bound LP + sum(d_od·rc_od+) + sum(n_k·rc_k+) computed from
+    /// the last full pricing pass (approximate when string pricing is label-limited, as
+    /// everywhere else with maintenance).</param>
+    public sealed record NodeResult(LpResult Lp, ColGenStats Stats, bool DeadlineHit = false,
+        double DualBound = double.PositiveInfinity);
 
     /// <summary>Fired after every pricing iteration: (iteration, lp objective, columns added).</summary>
     public event Action<int, double, int>? IterationProgress;
 
-    /// <summary>Solves the LP of the current node to (near) optimality via column generation.</summary>
-    public NodeResult SolveNode(PricingRestrictions rest, CancellationToken ct = default)
+    /// <summary>
+    /// Solves the LP of the current node to (near) optimality via column generation. When
+    /// <paramref name="deadline"/> returns true the loop stops early and returns the Farley
+    /// bound computed from the pricing pass of that iteration. With <paramref name="gapExtend"/>
+    /// the soft deadline is overridden while the convergence gap (best valid bound vs current
+    /// LP) is above <paramref name="gapThreshold"/>, until <paramref name="hardDeadline"/>.
+    /// </summary>
+    public NodeResult SolveNode(PricingRestrictions rest, CancellationToken ct = default,
+        Func<bool>? deadline = null, bool gapExtend = false, double gapThreshold = 0.03,
+        Func<bool>? hardDeadline = null)
     {
         int pricingIters = 0, cuttingIters = 0, pathsAdded = 0, stringsAdded = 0, cutsAdded = 0;
         var lp = _rmp.SolveLp();
+        // tightest valid dual bound seen across the convergence: every full pricing pass
+        // yields one (Farley), and an interruption right after a cutting iteration (duals in
+        // mid-swing, huge reduced costs) then falls back to the best earlier bound instead
+        // of reporting a uselessly wide one
+        double bestValidBound = double.PositiveInfinity;
 
         for (int iter = 0; iter < _opt.MaxIterations; iter++)
         {
@@ -67,12 +87,36 @@ public sealed class ColumnGeneration
             // ---- pricing iteration: paths and strings in parallel (§5)
             pricingIters++;
             var duals = _rmp.GetDuals(lp);
-            bool priceStrings = (pricingIters - 1) % _opt.StringPricingFrequency == 0;
+            bool deadlineHit = deadline?.Invoke() ?? false;
+            // on the deadline iteration always run string pricing too: the Farley bound
+            // needs reduced costs from both pricers
+            bool priceStrings = deadlineHit || (pricingIters - 1) % _opt.StringPricingFrequency == 0;
             var pathTask = Task.Run(() => _pathPricer.Price(duals, rest, _opt.Eps), ct);
             var stringTask = priceStrings
                 ? Task.Run(() => _stringPricer.Price(duals, rest, _opt.MaxStringColumnsPerIteration, _opt.Eps), ct)
                 : Task.FromResult(new List<StringPricer.PricedString>());
             Task.WaitAll([pathTask, stringTask], ct);
+
+            if (priceStrings && lp.Status == LpStatus.Optimal)
+                bestValidBound = Math.Min(bestValidBound,
+                    FarleyBound(lp.Objective, pathTask.Result, stringTask.Result));
+
+            // gap extension: past the soft deadline, keep converging while the LP is still
+            // provably far from done (bound quality governs, not the clock) — hard cap aside
+            if (deadlineHit && gapExtend && !(hardDeadline?.Invoke() ?? false)
+                && lp.Status == LpStatus.Optimal && double.IsFinite(bestValidBound))
+            {
+                double gap = (bestValidBound - lp.Objective) / Math.Max(1, Math.Abs(bestValidBound));
+                if (gap > gapThreshold) deadlineHit = false;
+            }
+
+            if (deadlineHit)
+            {
+                IterationProgress?.Invoke(pricingIters, lp.Objective, 0);
+                return new NodeResult(lp, new ColGenStats(pricingIters, cuttingIters,
+                    pathsAdded, stringsAdded, cutsAdded),
+                    DeadlineHit: true, DualBound: bestValidBound);
+            }
 
             int added = 0;
             foreach (var p in pathTask.Result)
@@ -114,6 +158,44 @@ public sealed class ColumnGeneration
         }
 
         return new NodeResult(lp,
-            new ColGenStats(pricingIters, cuttingIters, pathsAdded, stringsAdded, cutsAdded));
+            new ColGenStats(pricingIters, cuttingIters, pathsAdded, stringsAdded, cutsAdded),
+            DeadlineHit: false,
+            DualBound: lp.Status == LpStatus.Optimal
+                ? Math.Min(lp.Objective, bestValidBound) : double.PositiveInfinity);
+    }
+
+    /// <summary>
+    /// Farley/Lagrangian bound at interruption: current RMP value plus the most optimistic
+    /// contribution of the columns not yet generated. Each missing path column improves at
+    /// most rc_od per tonne and the od carries at most d_od tonnes; each missing string
+    /// improves at most rc per unit and fleet k operates at most n_k strings. The best string
+    /// overall is always inside the pricer's top-K return, so the global maximum is exact;
+    /// per-od path reduced costs are exact (one best path per od). Eps padding covers
+    /// columns below the pricing threshold.
+    /// </summary>
+    private double FarleyBound(double rmpObjective,
+        List<PathPricer.PricedPath> paths, List<StringPricer.PricedString> strings)
+    {
+        // only columns NOT yet in the master count: for columns already inside, LP
+        // optimality guarantees true rc <= 0 regardless of the rc a pricer reports
+        var bestPathRc = new Dictionary<int, double>();
+        foreach (var p in paths)
+        {
+            if (_rmp.ContainsPath(p.Path)) continue;
+            int od = p.Path.OdId;
+            if (!bestPathRc.TryGetValue(od, out double rc) || p.ReducedCost > rc)
+                bestPathRc[od] = p.ReducedCost;
+        }
+        double bound = rmpObjective;
+        foreach (var od in _inst.Ods)
+            bound += od.Weight *
+                Math.Max(_opt.Eps, bestPathRc.GetValueOrDefault(od.Id, 0));
+        double bestStringRc = 0;
+        foreach (var s in strings)
+            if (s.ReducedCost > bestStringRc && !_rmp.ContainsString(s.Str))
+                bestStringRc = s.ReducedCost;
+        foreach (var k in _inst.Fleets)
+            bound += k.Count * Math.Max(_opt.Eps, bestStringRc);
+        return bound;
     }
 }

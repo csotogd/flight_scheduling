@@ -11,11 +11,31 @@ public sealed record BpcOptions
     public double GapTarget { get; init; } = 0.005;
     public double TimeLimitSeconds { get; init; } = 3600;
     public int MaxNodes { get; init; } = 100_000;
-    public string LpBackend { get; init; } = "highs";
+    public string? LpBackend { get; init; } // null = auto: CPLEX if installed, else HiGHS
     public ColGenOptions ColGen { get; init; } = new();
     /// <summary>Run a MIP over the current columns as a primal heuristic every N nodes (0 = off).</summary>
     public int MipHeuristicFrequency { get; init; } = 40;
     public double MipHeuristicTimeLimit { get; init; } = 20;
+    /// <summary>Warm-start column pool (e.g. from the previous design round); columns must be
+    /// valid for the instance being solved.</summary>
+    public IReadOnlyCollection<CargoPath>? SeedPaths { get; init; }
+    public IReadOnlyCollection<FlightString>? SeedStrings { get; init; }
+    /// <summary>Return the final column pool in BpcResult (for cross-round warm starts).</summary>
+    public bool CollectColumnPool { get; init; }
+    /// <summary>Known feasible solution accepted as the initial incumbent (e.g. the previous
+    /// design round's schedule) and used as MIP-heuristic warm start. Must be feasible for
+    /// the instance being solved; its columns should be present in the seed pool.</summary>
+    public Solution? SeedSolution { get; init; }
+    /// <summary>After the root's column generation, monetize a flow-less seed: fix its string
+    /// selection in the LP and optimize the cargo flows over the columns the colgen just
+    /// generated (one warm LP solve, no extra pricing) — the incumbent starts with revenue
+    /// before the MIP heuristic runs.</summary>
+    public bool LoadSeedFlows { get; init; } = true;
+    /// <summary>Extend the colgen deadline while its own convergence gap (best valid bound vs
+    /// current LP) is above ColGenGapThreshold, up to ColGenHardFactor x the time limit.</summary>
+    public bool ColGenGapExtend { get; init; }
+    public double ColGenGapThreshold { get; init; } = 0.03;
+    public double ColGenHardFactor { get; init; } = 3.0;
 }
 
 public sealed record BpcProgress(int NodesExplored, int NodesOpen, double Incumbent, double Bound,
@@ -24,7 +44,8 @@ public sealed record BpcProgress(int NodesExplored, int NodesOpen, double Incumb
 public sealed record BpcResult(
     Solution? Best, double Objective, double Bound, double Gap,
     double FirstIncumbentObjective, double FirstIncumbentSeconds,
-    int NodesExplored, double ElapsedSeconds, bool Exact, string StopReason);
+    int NodesExplored, double ElapsedSeconds, bool Exact, string StopReason,
+    List<CargoPath>? PathPool = null, List<FlightString>? StringPool = null);
 
 /// <summary>
 /// The branch and price and cut procedure of §5 (Fig. 3): depth-first branch and bound
@@ -50,6 +71,11 @@ public sealed class BranchAndPrice
         var sw = Stopwatch.StartNew();
         using var rmp = new Rmp(_inst, _opt.WithMaintenance, LpSolverFactory.Create(_opt.LpBackend));
         rmp.SeedTrivialStrings();
+        // warm start: re-inject the column pool of a previous, structurally similar solve
+        if (_opt.SeedPaths is not null)
+            foreach (var p in _opt.SeedPaths) rmp.AddPath(p);
+        if (_opt.SeedStrings is not null)
+            foreach (var s in _opt.SeedStrings) rmp.AddString(s);
         var colgen = new ColumnGeneration(_inst, rmp, _opt.ColGen);
 
         Solution? best = null;
@@ -94,13 +120,27 @@ public sealed class BranchAndPrice
             SolutionAssembler.AssembleRotations(_inst, sol);
             var report = FeasibilityChecker.Check(_inst, sol);
             if (!report.IsFeasible)
-                throw new InvalidOperationException(
-                    $"solver produced an infeasible incumbent ({source}):\n{report}");
+            {
+                // an infeasible candidate is REJECTED, never accepted — but it must not kill
+                // a long run either: MIP solvers occasionally emit numerically borderline
+                // solutions; the incumbent guard stays, the process survives
+                Report($"incumbent rejected (infeasible, {source}: " +
+                    $"{report.Violations.Count} violations, first: {report.Violations[0]})");
+                return;
+            }
             best = sol;
             incumbent = obj;
             if (double.IsNaN(firstIncObj))
             { firstIncObj = obj; firstIncTime = sw.Elapsed.TotalSeconds; }
             Report($"incumbent ({source})");
+        }
+
+        // a seeded incumbent makes "no solution" impossible: at worst the caller gets the
+        // seed back (validated by the same feasibility check as any other incumbent)
+        if (_opt.SeedSolution is { } seed)
+        {
+            SolutionAssembler.AssembleRotations(_inst, seed);
+            TryAcceptIncumbent(seed, seed.Profit(_inst), "seed");
         }
 
         while (stack.Count > 0)
@@ -117,16 +157,23 @@ public sealed class BranchAndPrice
             rmp.ApplyBranchingState(node.Restrictions, node.ForcedFlights, node.ForcedExternals,
                 node.FixedStrings);
             processingBound = node.InheritedBound;
-            var result = colgen.SolveNode(node.Restrictions, ct);
+            var result = colgen.SolveNode(node.Restrictions, ct,
+                deadline: () => sw.Elapsed.TotalSeconds > _opt.TimeLimitSeconds,
+                gapExtend: _opt.ColGenGapExtend,
+                gapThreshold: _opt.ColGenGapThreshold,
+                hardDeadline: () =>
+                    sw.Elapsed.TotalSeconds > _opt.TimeLimitSeconds * _opt.ColGenHardFactor);
             nodesExplored++;
             var lp = result.Lp;
-            if (nodesExplored == 1) rootBound = lp.Status == LpStatus.Optimal ? lp.Objective : rootBound;
+            // when column generation was cut off by the deadline, lp.Objective is not a valid
+            // bound (improving columns may remain) — the Farley bound in DualBound is
+            if (nodesExplored == 1 && lp.Status == LpStatus.Optimal) rootBound = result.DualBound;
 
             if (lp.Status == LpStatus.Infeasible) { Report("pruned (infeasible)"); continue; }
             if (lp.Status != LpStatus.Optimal) { Report($"node status {lp.Status}"); continue; }
             if (rmp.ArtificialUsage(lp) > 1e-6)
             { Report("pruned (artificials in basis: infeasible)"); continue; }
-            double nodeBound = Math.Min(lp.Objective, node.InheritedBound);
+            double nodeBound = Math.Min(result.DualBound, node.InheritedBound);
             processingBound = nodeBound;
             if (!double.IsNegativeInfinity(incumbent) &&
                 nodeBound - incumbent <= Math.Abs(incumbent) * _opt.GapTarget)
@@ -138,11 +185,23 @@ public sealed class BranchAndPrice
                 continue;
             }
 
+            // seed monetization: at the root, if the incumbent is a flow-less seed (cover
+            // constructor output), fix its selection and optimize cargo flows over the pool
+            // the colgen just generated — one warm LP, revenue before the MIP heuristic
+            if (nodesExplored == 1 && _opt.LoadSeedFlows
+                && best is { Flows.Count: 0 } seedNoFlows)
+            {
+                var loaded = rmp.SolveLpWithSelectionFixed(seedNoFlows);
+                if (loaded.Status == LpStatus.Optimal && rmp.ArtificialUsage(loaded) <= 1e-6)
+                    TryAcceptIncumbent(rmp.ExtractSolution(loaded), loaded.Objective,
+                        "seed+flows");
+            }
+
             // primal heuristic: MIP over the current columns
             if (_opt.MipHeuristicFrequency > 0 &&
                 (nodesExplored == 1 || nodesExplored % _opt.MipHeuristicFrequency == 0))
             {
-                var mip = rmp.SolveMipOnCurrentColumns(_opt.MipHeuristicTimeLimit, 1e-4);
+                var mip = rmp.SolveMipOnCurrentColumns(_opt.MipHeuristicTimeLimit, 1e-4, best);
                 if (mip.Status is LpStatus.Optimal or LpStatus.TimeLimit && rmp.IsIntegral(mip))
                     TryAcceptIncumbent(rmp.ExtractSolution(mip), mip.Objective, "mip-heuristic");
             }
@@ -173,6 +232,8 @@ public sealed class BranchAndPrice
         sw.Stop();
         bool exact = !_opt.WithMaintenance; // heuristic string pricing => approximative bounds
         return new BpcResult(best, incumbent, finalBound, Gap(incumbent, finalBound),
-            firstIncObj, firstIncTime, nodesExplored, sw.Elapsed.TotalSeconds, exact, stopReason);
+            firstIncObj, firstIncTime, nodesExplored, sw.Elapsed.TotalSeconds, exact, stopReason,
+            _opt.CollectColumnPool ? rmp.Paths.Select(pc => pc.Path).ToList() : null,
+            _opt.CollectColumnPool ? rmp.Strings.Select(sc => sc.Str).ToList() : null);
     }
 }
