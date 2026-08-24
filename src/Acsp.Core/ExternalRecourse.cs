@@ -16,12 +16,17 @@ public static class ExternalRecourse
     /// <summary>Contracted delivery cost per tonne for every od (great-circle based).</summary>
     public static double[] CostPerTonne(Instance inst, double multiplier = DefaultMultiplier)
     {
-        // own economics per km, from the instance (same shape as the flight proposer uses)
-        double varPerKm = inst.Legs.Length > 0
-            ? inst.Legs.Average(l => l.VariableCostPerTonne / Math.Max(1, l.DistanceKm))
+        // own economics per km, derived from the MANDATORY schedule only: that set is
+        // identical across design rounds (candidates are optional, evictions never touch
+        // it), so the contracted tariff is stable and round profits stay comparable
+        var reference = inst.CargoFlights.Where(f => f.IsMandatory).ToList();
+        if (reference.Count == 0) reference = inst.CargoFlights.ToList();
+        var refLegs = reference.SelectMany(f => f.LegIds).Select(l => inst.Legs[l]).ToList();
+        double varPerKm = refLegs.Count > 0
+            ? refLegs.Average(l => l.VariableCostPerTonne / Math.Max(1, l.DistanceKm))
             : 0.035;
         double fixedPerKm = 4.0;
-        var ratios = inst.CargoFlights
+        var ratios = reference
             .SelectMany(f => Enumerable.Range(0, inst.Fleets.Length)
                 .Where(k => f.FixedCostByFleet.Length > k)
                 .Select(k => f.FixedCostByFleet[k]

@@ -489,6 +489,9 @@ public sealed class NetworkDesigner
                 {
                     SelectedStrings = strings, Flows = flows, SelectedExternalFlights = ext,
                     WithMaintenance = _lastSchedule.WithMaintenance,
+                    // od ids are untouched by flight evictions: contracted deliveries carry
+                    // over verbatim (dropping them broke the deliver-all seed, see r3 bug)
+                    Contracted = [.. _lastSchedule.Contracted],
                 }
                 : null;
         }
