@@ -50,6 +50,11 @@ public sealed record DesignOptions
     /// convergence gap exceeds ColGenGapThreshold, up to 3x the round budget.</summary>
     public bool ColGenGapExtend { get; init; }
     public double ColGenGapThreshold { get; init; } = 0.03;
+    /// <summary>Adopt candidates through a local-branching ball (at most LocalBranchK
+    /// selection flips per heuristic pass, escalating x2, x4 while flat) instead of asking
+    /// the round's MIP heuristic to reconsider the whole network at once.</summary>
+    public bool LocalBranching { get; init; } = true;
+    public int LocalBranchK { get; init; } = 60;
     public double GapTarget { get; init; } = 0.005;
     public bool WithMaintenance { get; init; }
     public string? LpBackend { get; init; }
@@ -315,6 +320,14 @@ public sealed class NetworkDesigner
                 (current, var flightMap, var legMap) = RemoveFlightsWithMap(candidate, evictCodes);
                 RemapPool(flightMap, legMap);
             }
+
+            // promise vs adoption: how much the LP bound said the batch was worth against
+            // what the integer step materialized — the observable that separates "the
+            // proposer is weak" (low promise) from "adoption is the bottleneck" (high
+            // promise, low adoption)
+            Progress?.Invoke(new DesignProgress(r,
+                $"adoption: LP promise {candRes.Bound - res.Bound:+#,0;-#,0;+0} vs " +
+                $"adopted {candRes.Objective - res.Objective:+#,0;-#,0;+0}", null));
             res = candRes;
 
             double improvement = best.Res.Objective != 0
@@ -369,7 +382,13 @@ public sealed class NetworkDesigner
                 };
                 finalBase.Validate();
                 _poolPaths = null;
-                _lastSchedule = null;
+                // the coarse schedule's flows/contracted reference pseudo-od ids, but its
+                // flight selection is od-independent: seed the exact final with "same
+                // flights, everything contracted" — feasible by construction under
+                // deliver-all — and let the seed flow loader monetize it over the freshly
+                // priced full-demand pool (the round-0 move, applied where the final used
+                // to start orphaned)
+                _lastSchedule = ContractedSeed(_lastSchedule, _base);
                 exactFinal = true;
             }
             var finalInst = rescued.Count == 0 ? finalBase
@@ -381,7 +400,10 @@ public sealed class NetworkDesigner
             if (finalRes.Best is null && exactFinal && !ct.IsCancellationRequested)
             {
                 // the exact final is the deliverable: one fresh escalation before giving up
-                _poolPaths = null; _poolStrings = null; _lastSchedule = null;
+                // (fresh pools, but the contracted seed is kept — it is what makes the full
+                // demand tractable at all)
+                _poolPaths = null; _poolStrings = null;
+                _lastSchedule = ContractedSeed(_lastSchedule, _base);
                 Progress?.Invoke(new DesignProgress(rf, "final retry (fresh, double budget)", null));
                 finalRes = SolveOnce(finalInst, rf, _opt.FinalTimeLimitSeconds * 2, ct);
             }
@@ -445,6 +467,8 @@ public sealed class NetworkDesigner
             LoadSeedFlows = _opt.LoadSeedFlows,
             ColGenGapExtend = _opt.ColGenGapExtend,
             ColGenGapThreshold = _opt.ColGenGapThreshold,
+            LocalBranching = _opt.LocalBranching,
+            LocalBranchK = _opt.LocalBranchK,
         });
         bpc.Progress += p => Progress?.Invoke(new DesignProgress(round, "solving", p));
         var res = bpc.Solve(ct);
@@ -453,6 +477,25 @@ public sealed class NetworkDesigner
         _lastSchedule = res.Best ?? _lastSchedule;
         return res;
     }
+
+    /// <summary>
+    /// Rebuilds a schedule as a seed for a different demand set: same flight selection
+    /// (od-independent), no flows, and — under deliver-all — every od contracted in full.
+    /// Feasible by construction; the seed flow loader then monetizes it over the target
+    /// instance's pool. Without deliver-all the flow-less selection is feasible too (nothing
+    /// shipped, costs only).
+    /// </summary>
+    private static Solution? ContractedSeed(Solution? s, Instance target) =>
+        s is null ? null : new Solution
+        {
+            SelectedStrings = [.. s.SelectedStrings],
+            SelectedExternalFlights = [.. s.SelectedExternalFlights],
+            Flows = [],
+            WithMaintenance = s.WithMaintenance,
+            Contracted = target.DeliverAll
+                ? target.Ods.Select(o => (o.Id, o.Weight)).ToList()
+                : [],
+        };
 
     /// <summary>Drops pool columns touching removed flights and remaps ids after an eviction.</summary>
     private void RemapPool(int[] flightMap, int[] legMap)

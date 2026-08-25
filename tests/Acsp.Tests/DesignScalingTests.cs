@@ -126,6 +126,55 @@ public class DesignScalingTests
     }
 
     [Fact]
+    public void Local_branching_heuristic_never_loses_the_seed_and_stays_feasible()
+    {
+        var inst = InstanceGenerator.Generate("RC", 1, 1);
+        var cover = CoverConstructor.Build(inst);
+        Assert.NotNull(cover.Solution);
+        SolutionAssembler.AssembleRotations(inst, cover.Solution!);
+        double seedProfit = cover.Solution!.Profit(inst);
+        var bpc = new BranchAndPrice(inst, new Acsp.Solver.BpcOptions
+        {
+            TimeLimitSeconds = 30, SeedSolution = cover.Solution,
+            LocalBranching = true, LocalBranchK = 20,
+            MipHeuristicFrequency = 1, LpBackend = "highs",
+        });
+        var res = bpc.Solve();
+        Assert.NotNull(res.Best);
+        // the incumbent is always feasible inside the ball: the heuristic can only improve
+        Assert.True(res.Objective >= seedProfit - 1e-6,
+            $"ball lost the seed: {res.Objective:F0} < {seedProfit:F0}");
+        Assert.True(FeasibilityChecker.Check(inst, res.Best!).IsFeasible);
+    }
+
+    [Fact]
+    public void Exact_final_solve_is_seeded_and_delivers_on_full_demand()
+    {
+        var baseInst = InstanceGenerator.Generate("RC", 1, 1);
+        var inst = new Instance
+        {
+            Name = baseInst.Name + "-da", Period = baseInst.Period, DeliverAll = true,
+            Airports = baseInst.Airports, Fleets = baseInst.Fleets,
+            Legs = baseInst.Legs, Flights = baseInst.Flights, Ods = baseInst.Ods,
+        };
+        // ConsolidateTinyFar routes the run through the exact-final path even when the
+        // consolidation itself is a noop (RC is regional): the final must swap the full
+        // demand back in, seed "same flights + all contracted", and deliver a solution
+        var designer = new NetworkDesigner(inst, new DesignOptions
+        {
+            MaxRounds = 1, BatchSize = 20, RoundTimeLimitSeconds = 15,
+            FinalTimeLimitSeconds = 20, ConsolidateTinyFar = true, LpBackend = "highs",
+        });
+        var result = designer.Run();
+        Assert.NotNull(result.Best.Best);
+        Assert.DoesNotContain("WARNING", result.StopReason);
+        var feas = FeasibilityChecker.Check(result.BestInstance, result.Best.Best!);
+        Assert.True(feas.IsFeasible, feas.ToString());
+        // full demand: every original od delivered (own network or contracted)
+        Assert.Equal(inst.Ods.Length, result.BestInstance.Ods.Length);
+    }
+
+    [Fact]
     public void Zone_filter_restricts_proposal_targets()
     {
         var inst = InstanceGenerator.Generate("MI", 1, 1);

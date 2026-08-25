@@ -100,6 +100,8 @@ static int Design(string[] a)
         TinyMaxTonnes = double.Parse(Opt(a, "tiny-max", "1.0")),
         TinyFarMinKm = double.Parse(Opt(a, "tiny-km", "4000")),
         ZoneRotation = Flag(a, "zones"),
+        LocalBranching = !Flag(a, "no-local-branch"),
+        LocalBranchK = int.Parse(Opt(a, "lb-k", "60")),
     };
     var designer = new NetworkDesigner(inst, opt);
     var lastReport = DateTime.MinValue;

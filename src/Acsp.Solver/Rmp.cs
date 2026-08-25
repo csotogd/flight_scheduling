@@ -327,6 +327,42 @@ public sealed class Rmp : IDisposable
         Solution? mipStart = null) =>
         _lp.SolveMip(timeLimitSeconds, gap, mipStart is null ? null : BuildMipStart(mipStart));
 
+    /// <summary>
+    /// Primal heuristic MIP restricted to a local-branching ball (Fischetti-Lodi 2003): at
+    /// most k string/external selection flips relative to the incumbent. The incumbent stays
+    /// feasible inside the ball, and the solver — not a hand-built neighborhood — picks WHICH
+    /// k moves pay, so rotation rewirings across the network are reachable. The ball row is
+    /// neutralized (free bounds) after the solve; neutralized rows accumulate but stay inert
+    /// (zero dual, never binding).
+    /// </summary>
+    public LpResult SolveMipLocalBranch(double timeLimitSeconds, Solution incumbent, int k,
+        double gap = 1e-4)
+    {
+        var sel = incumbent.SelectedStrings.Select(s => s.Key()).ToHashSet();
+        var cols = new List<int>(_strings.Count + _extCol.Count);
+        var coefs = new List<double>(_strings.Count + _extCol.Count);
+        int ones = 0;
+        foreach (var sc in _strings)
+        {
+            bool one = sel.Contains(sc.Str.Key());
+            if (one) ones++;
+            cols.Add(sc.Col); coefs.Add(one ? -1.0 : 1.0);
+        }
+        foreach (var (fid, col) in _extCol)
+        {
+            bool one = incumbent.SelectedExternalFlights.Contains(fid);
+            if (one) ones++;
+            cols.Add(col); coefs.Add(one ? -1.0 : 1.0);
+        }
+        // sum_{x^=0} x + sum_{x^=1} (1-x) <= k, written with the constant moved to the rhs
+        int row = _lp.AddRow(-Inf, k - ones,
+            System.Runtime.InteropServices.CollectionsMarshal.AsSpan(cols),
+            System.Runtime.InteropServices.CollectionsMarshal.AsSpan(coefs));
+        var res = _lp.SolveMip(timeLimitSeconds, gap, BuildMipStart(incumbent));
+        _lp.SetRowBounds(row, -Inf, Inf);
+        return res;
+    }
+
     /// <summary>Sparse (column, value) warm start from a known feasible solution: selected
     /// strings and external bookings at 1, path flows at their tonnes. Columns of the solution
     /// that are not in the RMP are skipped (the start is partial anyway).</summary>

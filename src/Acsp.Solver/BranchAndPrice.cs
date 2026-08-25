@@ -36,6 +36,12 @@ public sealed record BpcOptions
     public bool ColGenGapExtend { get; init; }
     public double ColGenGapThreshold { get; init; } = 0.03;
     public double ColGenHardFactor { get; init; } = 3.0;
+    /// <summary>Run the MIP heuristic inside a local-branching ball around the incumbent
+    /// (at most LocalBranchK selection flips, escalating x2, x4 while flat) instead of over
+    /// the unrestricted master — the tractable "best move of &lt;= k changes" question. Only
+    /// applies when an incumbent exists; falls back to the unrestricted MIP otherwise.</summary>
+    public bool LocalBranching { get; init; }
+    public int LocalBranchK { get; init; } = 60;
 }
 
 public sealed record BpcProgress(int NodesExplored, int NodesOpen, double Incumbent, double Bound,
@@ -201,9 +207,44 @@ public sealed class BranchAndPrice
             if (_opt.MipHeuristicFrequency > 0 &&
                 (nodesExplored == 1 || nodesExplored % _opt.MipHeuristicFrequency == 0))
             {
-                var mip = rmp.SolveMipOnCurrentColumns(_opt.MipHeuristicTimeLimit, 1e-4, best);
-                if (mip.Status is LpStatus.Optimal or LpStatus.TimeLimit && rmp.IsIntegral(mip))
-                    TryAcceptIncumbent(rmp.ExtractSolution(mip), mip.Objective, "mip-heuristic");
+                if (_opt.LocalBranching && best is not null)
+                {
+                    // escalating ball: k, 2k, 4k sharing the budget; a flat ball widens, an
+                    // adoption stops (the next heuristic pass search around the new incumbent)
+                    double slice = _opt.MipHeuristicTimeLimit / 3;
+                    bool adopted = false;
+                    for (int e = 0; e < 3 && !adopted; e++)
+                    {
+                        int k = _opt.LocalBranchK << e;
+                        double before = incumbent;
+                        var mip = rmp.SolveMipLocalBranch(slice, best!, k);
+                        if (mip.Status is LpStatus.Optimal or LpStatus.TimeLimit &&
+                            rmp.IsIntegral(mip))
+                            TryAcceptIncumbent(rmp.ExtractSolution(mip), mip.Objective,
+                                $"local-branch k={k}");
+                        adopted = incumbent > before + 1e-6;
+                        if (!adopted) Report($"local-branch k={k} flat");
+                    }
+                    // re-monetize an adoption at the root: the ball chose the flights against
+                    // the pool's flows, but the full LP over the adopted selection may find
+                    // better cargo routings for the flights just switched on (root state only:
+                    // the flow re-solve restores string bounds to [0,1])
+                    if (adopted && nodesExplored == 1)
+                    {
+                        var loaded = rmp.SolveLpWithSelectionFixed(best!);
+                        if (loaded.Status == LpStatus.Optimal &&
+                            rmp.ArtificialUsage(loaded) <= 1e-6)
+                            TryAcceptIncumbent(rmp.ExtractSolution(loaded), loaded.Objective,
+                                "adopt+flows");
+                    }
+                }
+                else
+                {
+                    var mip = rmp.SolveMipOnCurrentColumns(_opt.MipHeuristicTimeLimit, 1e-4, best);
+                    if (mip.Status is LpStatus.Optimal or LpStatus.TimeLimit && rmp.IsIntegral(mip))
+                        TryAcceptIncumbent(rmp.ExtractSolution(mip), mip.Objective,
+                            "mip-heuristic");
+                }
             }
 
             var decision = Branching.Decide(_inst, rmp, lp, node);
