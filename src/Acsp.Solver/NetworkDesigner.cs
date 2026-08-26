@@ -31,8 +31,11 @@ public sealed record DesignOptions
     public bool IncludeTrunks { get; init; } = true;
     /// <summary>Propose hub waves: coordinated feeder + trunk + distribution bundles per
     /// hub corridor and day, aimed at the long tail of tiny ods that no single flight can
-    /// monetize (the chain only pays as a set; the local-branching ball adopts it whole).</summary>
-    public bool IncludeWaves { get; init; } = true;
+    /// monetize (the chain only pays as a set; the local-branching ball adopts it whole).
+    /// Off by default: on RLA the waves changed neither the LP promise nor the integer
+    /// adoption of any round — the tail genuinely does not beat 3x contracting even as
+    /// coordinated bundles (see ALGORITHM.md §3.4).</summary>
+    public bool IncludeWaves { get; init; }
     /// <summary>Coarsen tiny, far O&amp;Ds into hub-corridor pseudo demand for the design
     /// rounds (OdConsolidator); the final solve always runs on the full demand, so delivered
     /// schedules and profits stay exact. Off by default.</summary>

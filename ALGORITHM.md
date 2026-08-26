@@ -193,6 +193,20 @@ bottleneck". On RLA the promise decays from ~+4M (rounds 1–2) to ~0 by round 3
 strong incumbent under deliver-all economics, extra candidates genuinely stop paying —
 the flat rounds are honest economics, not a closed adoption funnel.
 
+**Hub waves (negative result, kept opt-in).** The residual contracting bill (~46M) sits
+in a long tail: ~22,000 ods averaging ~2t each, scattered across ~200 spokes — demand no
+single candidate flight can monetize, since each od needs a complete feeder → trunk →
+distribution chain inside its delivery window. A fifth candidate class (`--waves`)
+proposes exactly that mechanism: per (origin-hub, destination-hub, day) corridor, up to 3
+feeder round trips landing before the bank closes, the trunk departing after the hub's
+sorting minimum, up to 3 distribution round trips after the destination sort, with target
+tonnage counting only window-feasible ods and an economic floor of a quarter of the
+smallest airplane. Measured on RLA: the waves changed neither the LP promise profile
+(+4.2M/+3.3M → ~0, same as without them) nor any round's integer adoption (+0
+everywhere). The fractional promise of rounds 1–2 is composition mirage, not value the
+wave shape unlocks: even bundled, the 2t-parcel tail does not beat 3× contracting once
+rotation fixed costs are paid. The class stays implemented, tested and off by default.
+
 ## 4. Engineering layer
 
 - **LP backends**: `ILpSolver` P/Invoke wrappers over HiGHS (bundled/Homebrew) and IBM
