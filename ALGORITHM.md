@@ -159,6 +159,40 @@ proposed twice, even after eviction.
 - Per-round time boxes mean later rounds on grown models report larger gaps; the final
   best solution is always feasibility-checked independently.
 
+### 3.4 Deliver-all, local-branching adoption, and the contracted final seed
+
+With a service commitment (`Instance.DeliverAll`) demand rows become equalities and every
+O&D carries an always-available contracted-delivery column priced at 3× own flying
+economics (`ExternalRecourse`, derived from the mandatory schedule only so the tariff is
+identical across design rounds). Revenue becomes constant, the model minimizes the
+contracting bill, and every selection is completable — seeds, sub-MIPs and the final solve
+are feasible by construction.
+
+Two mechanisms close the gaps this exposed on RLA (29,819 O&Ds):
+
+- **Local-branching adoption** (`BpcOptions.LocalBranching`, Fischetti–Lodi): the primal
+  MIP heuristic runs inside a Hamming ball of at most k selection flips around the
+  incumbent (k = 60, escalating ×2, ×4 while flat), so each round answers the tractable
+  question "best move of ≤ k changes" instead of re-deciding the whole network in one
+  time-boxed MIP. The incumbent stays feasible inside the ball (monotone), and the solver
+  — not a hand-built neighborhood — picks which flips, so cross-network rotation rewirings
+  stay reachable. An adoption at the root is re-monetized with one LP over the pool
+  (`adopt+flows`). Measured on RLA round 0: cover seed 129.9M → flow loader 139.6M →
+  ball +2.7M → re-monetization +1.1M = 143.45M, the first heuristic improvement this
+  model ever produced (the unrestricted heuristic moved +0 at the same budget).
+- **Contracted seed for the exact final solve**: when the rounds ran on consolidated
+  demand, the final solve swaps the full O&D set back in, where the coarse schedule's
+  flows don't translate — but its flight selection does. The final is seeded with "same
+  flights, everything contracted" (feasible by construction) and the flow loader monetizes
+  it over the freshly priced full-demand pool. Before: two final attempts, no incumbent,
+  no full-demand deliverable. After: 142.8M feasible on the full demand at a 9.9% gap.
+
+Each round logs `adoption: LP promise vs adopted` (bound delta vs incumbent delta of the
+candidate batch) — the observable separating "the proposer is weak" from "adoption is the
+bottleneck". On RLA the promise decays from ~+4M (rounds 1–2) to ~0 by round 3: with a
+strong incumbent under deliver-all economics, extra candidates genuinely stop paying —
+the flat rounds are honest economics, not a closed adoption funnel.
+
 ## 4. Engineering layer
 
 - **LP backends**: `ILpSolver` P/Invoke wrappers over HiGHS (bundled/Homebrew) and IBM
