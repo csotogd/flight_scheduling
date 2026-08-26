@@ -359,7 +359,9 @@ public sealed class Rmp : IDisposable
             System.Runtime.InteropServices.CollectionsMarshal.AsSpan(cols),
             System.Runtime.InteropServices.CollectionsMarshal.AsSpan(coefs));
         var res = _lp.SolveMip(timeLimitSeconds, gap, BuildMipStart(incumbent));
-        _lp.SetRowBounds(row, -Inf, Inf);
+        // neutralize with a finite, trivially satisfied bound (the lhs cannot exceed the
+        // number of participating columns) — infinite rhs values corrupt some backends
+        _lp.SetRowBounds(row, -Inf, cols.Count);
         return res;
     }
 

@@ -122,7 +122,9 @@ public sealed class BranchAndPrice
 
         void TryAcceptIncumbent(Solution sol, double obj, string source)
         {
-            if (obj <= incumbent + 1e-6) return;
+            // NaN passes every <= comparison: a poisoned objective would be accepted and
+            // then poison the incumbent guard itself for the rest of the run
+            if (double.IsNaN(obj) || obj <= incumbent + 1e-6) return;
             SolutionAssembler.AssembleRotations(_inst, sol);
             var report = FeasibilityChecker.Check(_inst, sol);
             if (!report.IsFeasible)

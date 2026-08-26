@@ -22,7 +22,7 @@ public static class SolutionJson
     public static object DesignReport(DesignResult res) => new
     {
         stopReason = res.StopReason,
-        baseProfit = res.BaseProfit,
+        baseProfit = Fin(res.BaseProfit),
         bestRound = res.BestRound,
         rounds = res.Rounds.Select(r => new
         {

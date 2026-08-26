@@ -166,10 +166,12 @@ public sealed class CplexSolver : ILpSolver
         return new LpResult(status, obj, colValues, rowDuals, dualBound);
     }
 
+    // rhs must be clamped too: CPLEX treats 1e20 as infinity but a raw IEEE inf in the rhs
+    // corrupts the solve (NaN objectives) instead of erroring
     private static (char Sense, double Rhs, double Range) RowForm(double lower, double upper) =>
         lower == upper ? ('E', lower, 0)
-        : double.IsNegativeInfinity(lower) || lower <= -Inf ? ('L', upper, 0)
-        : double.IsPositiveInfinity(upper) || upper >= Inf ? ('G', lower, 0)
+        : double.IsNegativeInfinity(lower) || lower <= -Inf ? ('L', Clamp(upper), 0)
+        : double.IsPositiveInfinity(upper) || upper >= Inf ? ('G', Clamp(lower), 0)
         : ('R', lower, upper - lower); // rhs <= a x <= rhs + range
 
     private static double Clamp(double b) => double.IsNegativeInfinity(b) ? -Inf
