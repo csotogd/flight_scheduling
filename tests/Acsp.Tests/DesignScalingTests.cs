@@ -126,6 +126,58 @@ public class DesignScalingTests
     }
 
     [Fact]
+    public void Hub_waves_propose_time_consistent_bundles_with_honest_tonnage()
+    {
+        var inst = InstanceGenerator.Generate("RLA", 1, 1);
+        var shipped = new double[inst.Ods.Length]; // nothing shipped: the whole tail is a target
+        var res = FlightProposer.Propose(inst, shipped, maxProposals: 60,
+            includeCapacityTargets: true, includeWaves: true);
+        var waves = res.Proposals.Where(pr => pr.Reason.Contains("hub wave")).ToList();
+        Assert.True(waves.Count > 0, "no waves proposed on a dense long-tail instance");
+
+        double waveMin = 0.25 * inst.Fleets.Min(k => k.MaxWeight);
+        var byCode = res.Extended.Flights.ToDictionary(f => f.Code);
+        var codeOf = inst.Airports.ToDictionary(a => a.Code, a => a.Id);
+        foreach (var bundle in waves.GroupBy(w => w.Reason.Split(':')[0]))
+        {
+            // honest economic floor and a complete mechanism: every wave flight touches a
+            // hub of its corridor, and cross-hub bundles carry their trunk
+            Assert.All(bundle, w => Assert.True(w.TargetTonnes >= waveMin,
+                $"{w.Code}: {w.TargetTonnes}t below the wave floor {waveMin}t"));
+            var corridor = bundle.First().TargetPair.Split("->");
+            int h1 = codeOf[corridor[0]], h2 = codeOf[corridor[1]];
+            Assert.All(bundle, w => Assert.True(
+                w.Route[0] == corridor[0] || w.Route[0] == corridor[1],
+                $"{w.Code} does not start at a corridor hub"));
+            if (h1 != h2 && bundle.Any(w => w.Reason.Contains("feeder"))
+                && bundle.Any(w => w.Reason.Contains("distribution")))
+            {
+                var trunk = bundle.SingleOrDefault(w => w.Reason.Contains("trunk"));
+                if (trunk is not null)
+                {
+                    // chain consistency: the trunk departs after every feeder has landed
+                    // plus the hub's own sorting minimum
+                    int sortH1 = inst.Airports[h1].MinTransferTime + 30;
+                    foreach (var f in bundle.Where(w => w.Reason.Contains("feeder")))
+                    {
+                        var legs = byCode[f.Code].LegIds.Select(l => res.Extended.Legs[l]).ToList();
+                        int arrHub = legs[^1].Arr; // spoke -> hub leg
+                        int slack = inst.Period.Wrap(trunk.DepMinute - arrHub);
+                        Assert.True(slack >= sortH1,
+                            $"trunk {trunk.Code} departs {slack}min after feeder {f.Code} " +
+                            $"lands; needs {sortH1}");
+                    }
+                }
+            }
+        }
+
+        // toggle off: no waves at all
+        var off = FlightProposer.Propose(inst, shipped, maxProposals: 60,
+            includeCapacityTargets: true, includeWaves: false);
+        Assert.DoesNotContain(off.Proposals, pr => pr.Reason.Contains("hub wave"));
+    }
+
+    [Fact]
     public void Local_branching_heuristic_never_loses_the_seed_and_stays_feasible()
     {
         var inst = InstanceGenerator.Generate("RC", 1, 1);

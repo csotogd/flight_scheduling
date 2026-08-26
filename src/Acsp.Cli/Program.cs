@@ -102,6 +102,7 @@ static int Design(string[] a)
         ZoneRotation = Flag(a, "zones"),
         LocalBranching = !Flag(a, "no-local-branch"),
         LocalBranchK = int.Parse(Opt(a, "lb-k", "60")),
+        IncludeWaves = !Flag(a, "no-waves"),
     };
     var designer = new NetworkDesigner(inst, opt);
     var lastReport = DateTime.MinValue;

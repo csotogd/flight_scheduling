@@ -29,6 +29,10 @@ public sealed record DesignOptions
     public bool IncludeExternal { get; init; } = true;
     /// <summary>Propose inter-hub trunk shuttles aimed at cross-hub unserved tonnage.</summary>
     public bool IncludeTrunks { get; init; } = true;
+    /// <summary>Propose hub waves: coordinated feeder + trunk + distribution bundles per
+    /// hub corridor and day, aimed at the long tail of tiny ods that no single flight can
+    /// monetize (the chain only pays as a set; the local-branching ball adopts it whole).</summary>
+    public bool IncludeWaves { get; init; } = true;
     /// <summary>Coarsen tiny, far O&amp;Ds into hub-corridor pseudo demand for the design
     /// rounds (OdConsolidator); the final solve always runs on the full demand, so delivered
     /// schedules and profits stay exact. Off by default.</summary>
@@ -223,7 +227,8 @@ public sealed class NetworkDesigner
             var prop = FlightProposer.Propose(current, shipped, _opt.BatchSize,
                 codePrefix: $"P{r}-", excludeKeys: ExcludedKeys(r), includeCapacityTargets: true,
                 includeDirect: _opt.IncludeDirect, includeExternalFallback: _opt.IncludeExternal,
-                includeTrunks: _opt.IncludeTrunks, zoneFilter: zoneFilter);
+                includeTrunks: _opt.IncludeTrunks, zoneFilter: zoneFilter,
+                includeWaves: _opt.IncludeWaves);
             if (prop.Proposals.Count == 0)
             {
                 // with zones an empty zone just passes its turn; stop only after a full
