@@ -29,7 +29,8 @@ public static class InstanceXlsx
         var airports = new List<object?[]>
         {
             new object?[] { "Code", "Name", "Lat", "Lon", "Hub", "MinTransferMin",
-                "TransferCostPerT", "StorageCostPerTHour", "MaintenanceHubFor" },
+                "TransferCostPerT", "StorageCostPerTHour", "MaintenanceHubFor",
+                "CurfewStart", "CurfewEnd" },
         };
         foreach (var a in inst.Airports)
             airports.Add([a.Code, a.Name, a.Lat, a.Lon, a.IsTransferHub ? "yes" : "",
@@ -37,13 +38,15 @@ public static class InstanceXlsx
                 a.IsTransferHub ? a.TransferCostPerTonne : null,
                 a.IsTransferHub ? a.StorageCostPerTonneHour : null,
                 string.Join(",", inst.Fleets.Where(k => a.MaintenanceHubFor.Length > k.Id
-                    && a.MaintenanceHubFor[k.Id]).Select(k => k.Code))]);
+                    && a.MaintenanceHubFor[k.Id]).Select(k => k.Code)),
+                a.CurfewStart < 0 ? null : $"{a.CurfewStart / 60:D2}:{a.CurfewStart % 60:D2}",
+                a.CurfewEnd < 0 ? null : $"{a.CurfewEnd / 60:D2}:{a.CurfewEnd % 60:D2}"]);
 
         var fleets = new List<object?[]>
         {
             new object?[] { "Code", "Count", "MaxWeightT", "MaxVolumeM3", "RangeKm", "SpeedKmH",
                 "FixedCostPerAircraft", "DefaultGroundMin", "MntMaxCycles", "MntMaxFlightH",
-                "MntMaxElapsedH", "MntStopH" },
+                "MntMaxElapsedH", "MntStopH", "RangeMaxKm", "PayloadAtMaxRangeT" },
         };
         foreach (var k in inst.Fleets)
             fleets.Add([k.Code, k.Count, k.MaxWeight, k.MaxVolume, k.RangeKm, k.CruiseSpeedKmH,
@@ -53,7 +56,9 @@ public static class InstanceXlsx
                     : Math.Round(k.MaxFlightMinutesBetweenMaintenance / 60.0, 2),
                 k.MaxElapsedMinutesBetweenMaintenance == int.MaxValue ? null
                     : Math.Round(k.MaxElapsedMinutesBetweenMaintenance / 60.0, 2),
-                Math.Round(k.MaintenanceDuration / 60.0, 2)]);
+                Math.Round(k.MaintenanceDuration / 60.0, 2),
+                k.RangeMaxKm > 0 ? k.RangeMaxKm : null,
+                k.PayloadAtMaxRangeT > 0 ? k.PayloadAtMaxRangeT : null]);
 
         var flights = new List<object?[]>();
         var header = new List<object?> { "FlightCode", "Kind", "LegNo", "From", "To", "Dep", "Arr",
@@ -102,10 +107,19 @@ public static class InstanceXlsx
             new object?[] { "Blank VarCostPerT = estimated from distance. Blank Fixed:<fleet> = estimated." },
             new object?[] { "External flights need CapT (and optionally CapVolM3, ExtFixedCost)." },
             new object?[] { "Blank Mnt* on a fleet = no maintenance constraint." },
+            new object?[] { "Airports CurfewStart/End (HH:MM): no arrivals in that window; blank = open." },
+            new object?[] { "Fleets RangeMaxKm/PayloadAtMaxRangeT: payload-range curve; blank = single range." },
         };
 
-        return XlsxWriter.Build(("Readme", readme), ("Airports", airports), ("Fleets", fleets),
-            ("Flights", flights), ("ODs", ods));
+        var settings = new List<object?[]>
+        {
+            new object?[] { "Key", "Value" },
+            new object?[] { "DeliverAll", inst.DeliverAll ? "yes" : "no" },
+            new object?[] { "CargoHandlingMinutes", inst.CargoHandlingMinutes },
+        };
+
+        return XlsxWriter.Build(("Readme", readme), ("Settings", settings),
+            ("Airports", airports), ("Fleets", fleets), ("Flights", flights), ("ODs", ods));
     }
 
     private static string TimeStr(int t) =>
@@ -169,6 +183,17 @@ public static class InstanceXlsx
             if (lat is null || lon is null)
             { Err("Airports", row, $"{code}: Lat/Lon must be numeric"); continue; }
             bool hub = IsYes(Cell(cells, apH, "Hub"));
+            // curfew accepts 'HH:MM' or plain minutes-of-day; blank = open all night
+            int CurfewMin(string col)
+            {
+                var s = Cell(cells, apH, col);
+                if (s.Length == 0) return -1;
+                var parts = s.Split(':');
+                if (parts.Length == 2 && int.TryParse(parts[0], out int hh)
+                    && int.TryParse(parts[1], out int mm))
+                    return hh * 60 + mm;
+                return (int)(Num(s) ?? -1);
+            }
             airports.Add(new Airport
             {
                 Id = airports.Count, Code = code, Name = Cell(cells, apH, "Name"),
@@ -176,6 +201,7 @@ public static class InstanceXlsx
                 MinTransferTime = (int)(Num(Cell(cells, apH, "MinTransferMin")) ?? 120),
                 TransferCostPerTonne = Num(Cell(cells, apH, "TransferCostPerT")) ?? 0,
                 StorageCostPerTonneHour = Num(Cell(cells, apH, "StorageCostPerTHour")) ?? 0,
+                CurfewStart = CurfewMin("CurfewStart"), CurfewEnd = CurfewMin("CurfewEnd"),
             });
             apIdx[code] = airports.Count - 1;
             mntHubCodes.Add(Cell(cells, apH, "MaintenanceHubFor")
@@ -216,6 +242,8 @@ public static class InstanceXlsx
                 MaxElapsedMinutesBetweenMaintenance =
                     mntElapsedH is null ? int.MaxValue : (int)(mntElapsedH.Value * 60),
                 MaintenanceDuration = (int)((Num(Cell(cells, flH, "MntStopH")) ?? 8) * 60),
+                RangeMaxKm = Num(Cell(cells, flH, "RangeMaxKm")) ?? 0,
+                PayloadAtMaxRangeT = Num(Cell(cells, flH, "PayloadAtMaxRangeT")) ?? 0,
             });
             fleetIdx[code] = fleets.Count - 1;
         }
@@ -240,6 +268,7 @@ public static class InstanceXlsx
                 MinTransferTime = airports[a].MinTransferTime,
                 TransferCostPerTonne = airports[a].TransferCostPerTonne,
                 StorageCostPerTonneHour = airports[a].StorageCostPerTonneHour,
+                CurfewStart = airports[a].CurfewStart, CurfewEnd = airports[a].CurfewEnd,
                 MaintenanceHubFor = mask, MaintenanceCost = cost,
             };
         }
@@ -381,9 +410,24 @@ public static class InstanceXlsx
 
         if (msgs.Any(m => m.Severity == "error")) return new ReadResult(null, msgs);
 
+        // optional Settings sheet (Key/Value): instance-level flags survive the round trip
+        bool deliverAll = false;
+        int handling = 0;
+        if (sheets.TryGetValue("Settings", out var settingRows))
+            foreach (var (_, cells) in settingRows.Skip(1))
+            {
+                if (cells.Count < 2) continue;
+                var (key, val) = (cells[0].Trim(), cells[1].Trim());
+                if (key.Equals("DeliverAll", StringComparison.OrdinalIgnoreCase))
+                    deliverAll = IsYes(val);
+                else if (key.Equals("CargoHandlingMinutes", StringComparison.OrdinalIgnoreCase))
+                    handling = (int)(Num(val) ?? 0);
+            }
+
         var inst = new Instance
         {
             Name = name, Period = Period.Weekly,
+            DeliverAll = deliverAll, CargoHandlingMinutes = handling,
             Airports = [.. airports], Fleets = [.. fleets],
             Legs = [.. legs], Flights = [.. flights], Ods = [.. ods],
         };

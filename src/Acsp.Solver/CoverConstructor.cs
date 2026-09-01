@@ -131,8 +131,10 @@ public static class CoverConstructor
                 .SelectMany(g => Enumerable.Range(0, inst.Fleets.Length)
                     .Where(k => k != ok && g!.All(fid => inst.Compatible(k, fid)))
                     .OrderBy(k => (double)needed[k] / inst.Fleets[k].Count)
-                    .Select(k => (Group: g!, Target: k)))
-                .Take(60);
+                    .Select(k => (Group: g!, Target: k)));
+            // first-improvement over the FULL candidate list: each trial is one cheap
+            // reassembly, and a tight fleet often has exactly one move that frees an
+            // aircraft — a truncated scan gives up right before finding it
             var moved = false;
             foreach (var (group, t) in candidates)
             {

@@ -129,6 +129,10 @@ public sealed class PathPricer
         var p = _inst.Period;
         var (hCost, hTime) = BoundsTo(od.Destination);
         double target = od.Rate - duals.OdDemand[od.Id]; // must exceed path cost + eps
+        // cargo handling: unloading eats into the delivery window at the destination end,
+        // loading delays the earliest catchable departure at the origin end (see Push/source)
+        int handling = _inst.CargoHandlingMinutes;
+        int deadline = od.MaxDeliveryTime - handling;
 
         double NodeCost(Leg leg)
         {
@@ -153,9 +157,9 @@ public sealed class PathPricer
 
         void Push(Label lab)
         {
-            if (lab.Time > od.MaxDeliveryTime) return;
+            if (lab.Time > deadline) return;
             if (hCost[lab.Leg] == double.PositiveInfinity) return;
-            if (hTime[lab.Leg] != int.MaxValue && lab.Time + hTime[lab.Leg] > od.MaxDeliveryTime && _inst.Legs[lab.Leg].Destination != od.Destination) return;
+            if (hTime[lab.Leg] != int.MaxValue && lab.Time + hTime[lab.Leg] > deadline && _inst.Legs[lab.Leg].Destination != od.Destination) return;
             // pareto dominance at the node
             if (!byNode.TryGetValue(lab.Leg, out var list)) { list = []; byNode[lab.Leg] = list; }
             foreach (var idx in list)
@@ -176,6 +180,7 @@ public sealed class PathPricer
         {
             if (leg.Origin != od.Origin || !rest.LegVisible[leg.Id]) continue;
             int wait = p.Time(od.Avail, leg.Dep);
+            if (wait < handling) wait += p.N; // still loading: catch next week's departure
             int t = wait + leg.BlockTime(p);
             Push(new Label(leg.Id, NodeCost(leg) + EntryCost(leg), t, -1));
         }

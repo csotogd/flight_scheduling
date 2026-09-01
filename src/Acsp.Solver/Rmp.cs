@@ -190,7 +190,10 @@ public sealed class Rmp : IDisposable
             rows.Add(_coverRow[fid]); coefs.Add(1.0);
             foreach (var lid in _inst.Flights[fid].LegIds)
             {
-                rows.Add(_legWeightRow[lid]); coefs.Add(-_inst.Fleets[k].MaxWeight);
+                // weight capacity follows the payload-range frontier: on a long leg the same
+                // airplane offers fewer tonnes (linear per (leg, fleet), so the LP is exact)
+                rows.Add(_legWeightRow[lid]);
+                coefs.Add(-_inst.Fleets[k].PayloadAtKm(_inst.Legs[lid].DistanceKm));
                 rows.Add(_legVolumeRow[lid]); coefs.Add(-_inst.Fleets[k].MaxVolume);
             }
             foreach (var (od, fl) in _cuts)

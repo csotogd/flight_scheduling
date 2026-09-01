@@ -9,6 +9,10 @@ public sealed class Instance
     /// cannot carry is contracted externally at ExternalRecourse prices. Demand rows become
     /// equalities and every od gets an always-available contracted-delivery option.</summary>
     public bool DeliverAll { get; init; }
+    /// <summary>Minutes to load a shipment at its origin and to unload it at its destination
+    /// (each end). Cargo cannot board a flight departing earlier than avail + handling, and
+    /// is only delivered handling minutes after final arrival. 0 = instantaneous (legacy).</summary>
+    public int CargoHandlingMinutes { get; init; }
     public required Airport[] Airports { get; init; }
     public required FleetType[] Fleets { get; init; }
     public required Leg[] Legs { get; init; }
@@ -52,7 +56,9 @@ public sealed class Instance
                 for (int i = 0; i < f.LegIds.Length && ok; i++)
                 {
                     var leg = Legs[f.LegIds[i]];
-                    if (leg.DistanceKm > k.RangeKm) ok = false;
+                    // payload-range frontier: beyond the fleet's maximum range the leg is
+                    // unflyable even empty (reduces to the RangeKm check without a curve)
+                    if (k.PayloadAtKm(leg.DistanceKm) <= 0) ok = false;
                     // ground time between consecutive legs of the flight
                     if (ok && i + 1 < f.LegIds.Length)
                     {

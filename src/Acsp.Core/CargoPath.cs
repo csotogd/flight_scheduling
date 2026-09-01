@@ -29,20 +29,26 @@ public sealed class CargoPath
         return od.Rate - cost;
     }
 
-    /// <summary>Total elapsed minutes from avail_od to final arrival (left side of CR-5-DELTIME).</summary>
+    /// <summary>Total elapsed minutes from avail_od to DELIVERED (left side of CR-5-DELTIME):
+    /// includes cargo handling — the shipment cannot board a flight departing less than
+    /// handling minutes after avail (it catches next week's departure instead), and is only
+    /// delivered handling minutes after final arrival.</summary>
     public int TotalDeliveryTime(Instance inst)
     {
         var od = inst.Ods[OdId];
         var p = inst.Period;
+        int h = inst.CargoHandlingMinutes;
         var first = inst.Legs[LegIds[0]];
-        int t = p.Time(od.Avail, first.Dep) + first.BlockTime(p);
+        int wait = p.Time(od.Avail, first.Dep);
+        if (wait < h) wait += p.N; // loading not finished: only next week's departure works
+        int t = wait + first.BlockTime(p);
         for (int i = 1; i < LegIds.Length; i++)
         {
             var prev = inst.Legs[LegIds[i - 1]];
             var leg = inst.Legs[LegIds[i]];
             t += p.Time(prev.Arr, leg.Dep) + leg.BlockTime(p);
         }
-        return t;
+        return t + h; // unloading at the destination
     }
 
     /// <summary>Feasibility per §3.1.8 plus CR-6/CR-7 (transfer hub with adequate transfer time).</summary>

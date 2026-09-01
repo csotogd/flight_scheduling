@@ -18,8 +18,33 @@ public sealed class FleetType
     /// <summary>vmax_k: maximal payload volume in m3.</summary>
     public required double MaxVolume { get; init; }
 
-    /// <summary>Maximal leg range in km (used for fleet-flight compatibility, FA-3-COMP).</summary>
+    /// <summary>Range in km at FULL payload (the payload-range breakpoint). Also the
+    /// fleet-flight compatibility limit when no curve is configured (RangeMaxKm = 0).</summary>
     public required double RangeKm { get; init; }
+
+    /// <summary>Maximum range in km, reached at PayloadAtMaxRangeT (fuel-limited point of the
+    /// payload-range curve); beyond it the leg is unflyable even empty. 0 = no curve: the
+    /// classic single-range model (RangeKm limits compatibility, payload never derated).</summary>
+    public double RangeMaxKm { get; init; }
+
+    /// <summary>Payload in tonnes at RangeMaxKm. 0 = half of MaxWeight (typical fuel-volume
+    /// tradeoff point). Only meaningful when RangeMaxKm &gt; 0.</summary>
+    public double PayloadAtMaxRangeT { get; init; }
+
+    /// <summary>
+    /// The payload-range frontier, inverted: maximal payload (tonnes) this fleet can carry on
+    /// a leg of the given distance. Flat at MaxWeight up to RangeKm, linear down to
+    /// PayloadAtMaxRangeT at RangeMaxKm, 0 (incompatible) beyond. Enters the model as the
+    /// per-(leg, fleet) capacity coefficient — exact and linear, no optimization cost.
+    /// </summary>
+    public double PayloadAtKm(double distanceKm)
+    {
+        if (distanceKm <= RangeKm) return MaxWeight;
+        double rangeMax = RangeMaxKm > 0 ? RangeMaxKm : RangeKm;
+        if (distanceKm > rangeMax) return 0;
+        double floor = PayloadAtMaxRangeT > 0 ? PayloadAtMaxRangeT : MaxWeight / 2;
+        return MaxWeight - (MaxWeight - floor) * (distanceKm - RangeKm) / (rangeMax - RangeKm);
+    }
 
     public double CruiseSpeedKmH { get; init; } = 850;
 

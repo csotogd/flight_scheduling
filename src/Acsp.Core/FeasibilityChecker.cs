@@ -86,8 +86,21 @@ public static class FeasibilityChecker
             foreach (var fid in s.FlightIds)
                 foreach (var lid in inst.Flights[fid].LegIds)
                 {
-                    legWeightCap[lid] = inst.Fleets[s.FleetId].MaxWeight;
+                    // payload-range frontier: capacity is distance-derated (CR-2-PAYLOAD)
+                    legWeightCap[lid] = inst.Fleets[s.FleetId].PayloadAtKm(inst.Legs[lid].DistanceKm);
                     legVolumeCap[lid] = inst.Fleets[s.FleetId].MaxVolume;
+                }
+
+        // night curfews: no selected own flight may ARRIVE during a closed window (CURFEW)
+        foreach (var s in sol.SelectedStrings)
+            foreach (var fid in s.FlightIds)
+                foreach (var lid in inst.Flights[fid].LegIds)
+                {
+                    var leg = inst.Legs[lid];
+                    var ap = inst.Airports[leg.Destination];
+                    if (ap.InArrivalCurfew(leg.Arr))
+                        v.Add($"flight {inst.Flights[fid].Code} leg {lid} arrives at {ap.Code} " +
+                            $"during its curfew (CURFEW)");
                 }
 
         var odShipped = new double[inst.Ods.Length];

@@ -8,6 +8,7 @@ CultureInfo.DefaultThreadCurrentCulture = CultureInfo.InvariantCulture;
 return args switch
 {
     ["generate", .. var rest] => Generate(rest),
+    ["profile", .. var rest] => ProfileCmd(rest),
     ["solve", .. var rest] => SolveCmd(rest),
     ["design", .. var rest] => Design(rest),
     ["cover", .. var rest] => Cover(rest),
@@ -239,19 +240,38 @@ static string Opt(string[] a, string name, string def)
 
 static bool Flag(string[] a, string name) => Array.IndexOf(a, "--" + name) >= 0;
 
+static int ProfileCmd(string[] a)
+{
+    if (a.Length < 2)
+    {
+        Console.WriteLine("usage: acsp profile CODE OUT.json   (export a built-in airline " +
+            "profile as an editable configuration file; use it with 'generate --airline OUT.json')");
+        return 1;
+    }
+    var p = AirlineProfile.Get(a[0]);
+    ProfileJson.Save(p, a[1]);
+    Console.WriteLine($"{a[1]}: profile {p.Code} — {p.HubCodes.Length} hubs, " +
+        $"{p.Fleets.Length} fleet types ({p.Fleets.Sum(f => f.Count)} aircraft), " +
+        $"curfew {(p.CurfewStart < 0 ? "none" : $"{p.CurfewStart / 60:D2}:{p.CurfewStart % 60:D2}-{p.CurfewEnd / 60:D2}:{p.CurfewEnd % 60:D2}")}, " +
+        $"handling {p.CargoHandlingMinutes}min. Edit and generate with " +
+        $"'generate --airline {a[1]} --set 1 --seeds 1'");
+    return 0;
+}
+
 static int Generate(string[] a)
 {
     string airline = Opt(a, "airline", "all");
     string set = Opt(a, "set", "all");
     int seeds = int.Parse(Opt(a, "seeds", "5"));
     string dir = Opt(a, "out", "instances");
-    var airlines = airline == "all" ? ["RC", "IC", "MI", "EX", "GI"] : new[] { airline.ToUpperInvariant() };
+    var airlines = airline == "all" ? ["RC", "IC", "MI", "EX", "GI"] : new[] { airline };
     var sets = set == "all" ? [1, 2, 3] : new[] { int.Parse(set) };
     foreach (var al in airlines)
         foreach (var st in sets)
             for (int seed = 1; seed <= seeds; seed++)
             {
-                var inst = InstanceGenerator.Generate(al, st, seed);
+                // al is a built-in code (RC, RLA, ...) or the path of a profile JSON
+                var inst = InstanceGenerator.Generate(ProfileJson.Resolve(al), st, seed);
                 var path = Path.Combine(dir, inst.Name + ".json");
                 InstanceJson.Save(inst, path);
                 Console.WriteLine($"{path}: {inst.Flights.Length} flights " +

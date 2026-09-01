@@ -72,7 +72,11 @@ public static class FlightProposer
             .ToList();
 
         var hubs = inst.Airports.Where(a => a.IsTransferHub).ToList();
-        double maxRange = inst.Fleets.Max(k => k.RangeKm);
+        // longest leg any fleet can fly at all (payload-range curve: derated but flyable)
+        double maxRange = inst.Fleets.Max(k => k.RangeMaxKm > 0 ? k.RangeMaxKm : k.RangeKm);
+        // loading lead time before a proposed departure can carry fresh demand
+        int lead = Math.Max(240, inst.CargoHandlingMinutes + 60);
+        int load = Math.Max(60, inst.CargoHandlingMinutes + 15);
         double CostPerKm(int k)
         {
             var ratios = inst.CargoFlights.Where(f => inst.Compatible(k, f.Id))
@@ -166,14 +170,14 @@ public static class FlightProposer
                     int h = inst.Airports[o].IsTransferHub ? o : d;
                     int spoke = h == o ? d : o;
                     bool pickup = h == d; // cargo boards at the spoke when the destination is the hub
-                    int t = p.Wrap(avail + 240);
+                    int t = p.Wrap(avail + lead);
                     ProposeRoundTrip(h, spoke, t, pickup, pair, tonnes,
                         why(pickup ? "direct pickup to the hub" : "direct delivery from the hub"));
                 }
                 else if (hub is not null)
                 {
                     // two coordinated round trips: pick up at o, deliver at d via the hub
-                    int pickupDep = p.Wrap(avail + 240);
+                    int pickupDep = p.Wrap(avail + lead);
                     ProposeRoundTrip(hub.Id, o, pickupDep, pickup: true, pair, tonnes,
                         why($"pickup towards hub {hub.Code}"));
                     int blockOh = (int)Math.Round(Dist(o, hub.Id) / 850.0 * 60) + 40;
@@ -217,7 +221,7 @@ public static class FlightProposer
                 var (o, d) = group.Key;
                 bool routable = !strandedSet.Contains(group.First().Id);
                 var od = group.OrderByDescending(x => Unshipped(x)).First();
-                int dep = p.Wrap(od.Avail + 240);
+                int dep = p.Wrap(od.Avail + lead);
                 string key = $"d{o}-{d}-{dep / 360}";
                 if (!seen.Add(key)) continue;
                 newKeys.Add(key);
@@ -252,7 +256,7 @@ public static class FlightProposer
             {
                 if (proposals.Count >= cap) break;
                 if (Dist(h1, h2) > maxRange || Dist(h1, h2) < 250) continue;
-                int dep = p.Wrap(avail + 240);
+                int dep = p.Wrap(avail + lead);
                 string key = $"t{h1}-{h2}-{dep / 360}";
                 if (!seen.Add(key)) continue;
                 newKeys.Add(key);
@@ -303,7 +307,7 @@ public static class FlightProposer
                 var feeders = members.Where(o => o.Origin != h1 && InRange(o.Origin, h1))
                     .GroupBy(o => o.Origin)
                     .Select(g => (Spoke: g.Key, T: g.Sum(Unshipped),
-                        DepSpoke: g.Max(o => o.Avail) + 60))
+                        DepSpoke: g.Max(o => o.Avail) + load))
                     .OrderByDescending(x => x.T).Take(3).ToList();
                 var dists = members.Where(o => o.Destination != h2 && InRange(h2, o.Destination))
                     .GroupBy(o => o.Destination)
@@ -317,7 +321,7 @@ public static class FlightProposer
                 var atH1 = members.Where(o => o.Origin == h1).ToList();
                 int t1 = Math.Max(
                     feeders.Count > 0 ? feeders.Max(x => x.DepSpoke + Block(x.Spoke, h1)) + sortH1 : 0,
-                    atH1.Count > 0 ? atH1.Max(o => o.Avail) + 60 : 0);
+                    atH1.Count > 0 ? atH1.Max(o => o.Avail) + load : 0);
                 if (t1 == 0) continue; // nothing can reach the bank
                 int trunkArr = h1 == h2 ? t1 : t1 + Block(h1, h2);
                 int t2 = h1 == h2 ? t1 : trunkArr + sortH2;
@@ -376,7 +380,7 @@ public static class FlightProposer
                 if (!strandedSet.Contains(group.First().Id)) continue; // only unroutable demand
                 var od = group.OrderByDescending(x => Unshipped(x)).First();
                 double tonnes = group.Sum(x => Unshipped(x));
-                int dep = p.Wrap(od.Avail + 240);
+                int dep = p.Wrap(od.Avail + lead);
                 string key = $"x{o}-{d}-{dep / 360}";
                 if (!seen.Add(key)) continue;
                 newKeys.Add(key);
@@ -406,6 +410,8 @@ public static class FlightProposer
             {
                 double dist = Dist(route[i], route[i + 1]);
                 int block = (int)Math.Round(dist / 850.0 * 60) + 40;
+                // night curfew at the destination: postpone departure until the arrival clears
+                t += inst.Airports[route[i + 1]].ArrivalCurfewDelay(p.Wrap(t + block));
                 double varT = external
                     ? Math.Round(2 * (dist * varPerKm + dist * avgCostPerKm / externalCapT), 2)
                     : Math.Round(dist * varPerKm, 2);

@@ -29,4 +29,24 @@ public sealed class Airport
 
     /// <summary>gtmin_{a,k} override in minutes; -1 = use fleet default. Indexed by fleet id.</summary>
     public int[] MinGroundTimeOverride { get; init; } = [];
+
+    /// <summary>Night curfew: no ARRIVALS in [CurfewStart, CurfewEnd) minutes-of-day
+    /// (a window crossing midnight is expressed with start &gt; end, e.g. 23:00-05:00).
+    /// -1 = no curfew. Departures stay allowed (the common noise regulation).</summary>
+    public int CurfewStart { get; init; } = -1;
+    public int CurfewEnd { get; init; } = -1;
+
+    /// <summary>Whether an arrival at this minute-of-week violates the curfew.</summary>
+    public bool InArrivalCurfew(int minuteOfWeek)
+    {
+        if (CurfewStart < 0 || CurfewEnd < 0) return false;
+        int m = minuteOfWeek % 1440;
+        return CurfewStart <= CurfewEnd
+            ? m >= CurfewStart && m < CurfewEnd
+            : m >= CurfewStart || m < CurfewEnd;
+    }
+
+    /// <summary>Minutes to postpone an arrival so it clears the curfew (0 when open).</summary>
+    public int ArrivalCurfewDelay(int minuteOfWeek) =>
+        !InArrivalCurfew(minuteOfWeek) ? 0 : (CurfewEnd - minuteOfWeek % 1440 + 1440) % 1440;
 }

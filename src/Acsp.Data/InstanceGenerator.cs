@@ -56,6 +56,9 @@ public sealed class InstanceGenerator
     public static Instance Generate(string airline, int set, int seed) =>
         new InstanceGenerator(AirlineProfile.Get(airline), seed).Build(set);
 
+    public static Instance Generate(AirlineProfile profile, int set, int seed) =>
+        new InstanceGenerator(profile, seed).Build(set);
+
     public Instance Build(int set)
     {
         if (set is < 1 or > 3) throw new ArgumentException("set must be 1, 2 or 3");
@@ -240,12 +243,27 @@ public sealed class InstanceGenerator
         {
             double dist = GreatCircle.Km(route[i], route[i + 1]);
             int block = (int)Math.Round(dist / speed * 60) + 40;
+            // night curfew at the destination: postpone departure until the arrival clears
+            t += CurfewDelay(route[i + 1], period.Wrap(t + block));
             int dep = period.Wrap(t);
             int arr = period.Wrap(t + block);
             legs.Add(new LegDraft(route[i].Code, route[i + 1].Code, dep, arr, dist));
             t += block + 75 + _rng.Next(60); // ground time at the intermediate stop
         }
         return new FlightDraft(code, legs, External: false, Mandatory: false);
+    }
+
+    /// <summary>Minutes to postpone an arrival at this airport so it clears the profile's
+    /// night curfew (0 when open; hubs stay open unless CurfewAtHubs).</summary>
+    private int CurfewDelay(AirportInfo ap, int arrMinuteOfWeek)
+    {
+        if (_p.CurfewStart < 0 || _p.CurfewEnd < 0) return 0;
+        if (_p.HubCodes.Contains(ap.Code) && !_p.CurfewAtHubs) return 0;
+        int m = arrMinuteOfWeek % 1440;
+        bool inside = _p.CurfewStart <= _p.CurfewEnd
+            ? m >= _p.CurfewStart && m < _p.CurfewEnd
+            : m >= _p.CurfewStart || m < _p.CurfewEnd;
+        return inside ? (_p.CurfewEnd - m + 1440) % 1440 : 0;
     }
 
     // ---------------------------------------------------------------- external flights
@@ -419,6 +437,8 @@ public sealed class InstanceGenerator
                 MaintenanceHubFor = Enumerable.Repeat(isHub, nFleets).ToArray(),
                 MaintenanceCost = _p.Fleets.Select(f => isHub ? f.MaintenanceCost : 0).ToArray(),
                 MinGroundTimeOverride = Enumerable.Repeat(-1, nFleets).ToArray(),
+                CurfewStart = isHub && !_p.CurfewAtHubs ? -1 : _p.CurfewStart,
+                CurfewEnd = isHub && !_p.CurfewAtHubs ? -1 : _p.CurfewEnd,
             };
         }).ToArray();
 
@@ -427,7 +447,8 @@ public sealed class InstanceGenerator
             Id = id, Code = f.Code, Count = f.Count,
             FixedCostPerAircraft = f.FixedPerAircraftWeek,
             MaxWeight = f.MaxWeight, MaxVolume = f.MaxVolume,
-            RangeKm = f.RangeKm, CruiseSpeedKmH = f.SpeedKmH,
+            RangeKm = f.RangeKm, RangeMaxKm = f.RangeMaxKm,
+            PayloadAtMaxRangeT = f.PayloadAtMaxRangeT, CruiseSpeedKmH = f.SpeedKmH,
             DefaultMinGroundTime = 60,
             MaxCyclesBetweenMaintenance = f.MntCycles,
             MaxFlightMinutesBetweenMaintenance = f.MntFlightMinutes,
@@ -476,6 +497,7 @@ public sealed class InstanceGenerator
         var inst = new Instance
         {
             Name = name, Period = Period.Weekly, DeliverAll = _p.DeliverAll,
+            CargoHandlingMinutes = _p.CargoHandlingMinutes,
             Airports = airports, Fleets = fleets,
             Legs = [.. legs], Flights = [.. flights], Ods = ods,
         };

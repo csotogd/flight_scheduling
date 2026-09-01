@@ -3,7 +3,10 @@ namespace Acsp.Data;
 public sealed record FleetSpec(
     string Code, int Count, double MaxWeight, double MaxVolume, double RangeKm, double SpeedKmH,
     double FixedPerAircraftWeek, double FuelCostPerKm, double LandingFee, double MaintenanceCost,
-    int MntCycles, int MntFlightMinutes, int MntElapsedMinutes, int MntDurationMinutes);
+    int MntCycles, int MntFlightMinutes, int MntElapsedMinutes, int MntDurationMinutes,
+    // payload-range curve: RangeKm is the full-payload range; RangeMaxKm the fuel-limited
+    // maximum (reached at PayloadAtMaxRangeT, default half payload). 0 = no curve.
+    double RangeMaxKm = 0, double PayloadAtMaxRangeT = 0);
 
 public sealed record ExternalSpec(
     string Kind, // "RFS" (road feeder) or "PAX" (belly capacity)
@@ -30,7 +33,11 @@ public sealed record AirlineProfile(
     bool DenseDemand = false,     // point-to-point O&Ds from every station, not hub-anchored
     double GravityPairShare = 0,  // >0: this share of ALL ordered station pairs gets demand,
                                   // sampled with distance-decaying probability (NumOds ignored)
-    bool DeliverAll = false)      // service commitment: everything ships, contracted if needed
+    bool DeliverAll = false,      // service commitment: everything ships, contracted if needed
+    int CurfewStart = 0,          // night curfew (no arrivals) at NON-HUB airports,
+    int CurfewEnd = 360,          //   minutes-of-day [start, end); -1/-1 disables
+    bool CurfewAtHubs = false,    // hubs usually run the night sort and stay open
+    int CargoHandlingMinutes = 30) // shipment load/unload time at each end
 {
     public static readonly AirlineProfile RC = new(
         Code: "RC", HubCodes: ["HKG"], NumCargoDestinations: 23,
@@ -115,13 +122,13 @@ public sealed record AirlineProfile(
         Fleets:
         [
             new FleetSpec("B777F", 26, 102, 650, 9200, 900, 130_000, 5.5, 3800, 25_000,
-                MntCycles: 40, MntFlightMinutes: 5400, MntElapsedMinutes: 2 * 10080, MntDurationMinutes: 600),
+                MntCycles: 40, MntFlightMinutes: 5400, MntElapsedMinutes: 2 * 10080, MntDurationMinutes: 600, RangeMaxKm: 13500),
             new FleetSpec("B767F", 42, 52, 438, 6000, 850, 70_000, 3.6, 2500, 15_000,
-                MntCycles: 44, MntFlightMinutes: 4800, MntElapsedMinutes: 2 * 10080, MntDurationMinutes: 480),
+                MntCycles: 44, MntFlightMinutes: 4800, MntElapsedMinutes: 2 * 10080, MntDurationMinutes: 480, RangeMaxKm: 8500),
             new FleetSpec("A300F", 45, 45, 320, 6600, 840, 60_000, 3.4, 2200, 12_000,
-                MntCycles: 44, MntFlightMinutes: 4500, MntElapsedMinutes: 2 * 10080, MntDurationMinutes: 480),
+                MntCycles: 44, MntFlightMinutes: 4500, MntElapsedMinutes: 2 * 10080, MntDurationMinutes: 480, RangeMaxKm: 9000),
             new FleetSpec("B757F", 35, 29, 239, 5800, 850, 45_000, 2.6, 1500, 10_000,
-                MntCycles: 44, MntFlightMinutes: 4500, MntElapsedMinutes: 2 * 10080, MntDurationMinutes: 420),
+                MntCycles: 44, MntFlightMinutes: 4500, MntElapsedMinutes: 2 * 10080, MntDurationMinutes: 420, RangeMaxKm: 8000),
         ],
         MandatoryFlights: 1000, OptionalFlightsSetII: 500,
         MinStops: 1, MaxStops: 2, InterHubRouteProb: 0.15,
@@ -149,17 +156,17 @@ public sealed record AirlineProfile(
         Fleets =
         [
             new FleetSpec("B777F", 26, 102, 650, 9200, 900, 130_000, 5.5, 3800, 25_000,
-                MntCycles: 40, MntFlightMinutes: 5400, MntElapsedMinutes: 2 * 10080, MntDurationMinutes: 600),
+                MntCycles: 40, MntFlightMinutes: 5400, MntElapsedMinutes: 2 * 10080, MntDurationMinutes: 600, RangeMaxKm: 13500),
             new FleetSpec("B767F", 30, 52, 438, 6000, 850, 70_000, 3.6, 2500, 15_000,
-                MntCycles: 44, MntFlightMinutes: 4800, MntElapsedMinutes: 2 * 10080, MntDurationMinutes: 480),
+                MntCycles: 44, MntFlightMinutes: 4800, MntElapsedMinutes: 2 * 10080, MntDurationMinutes: 480, RangeMaxKm: 8500),
             new FleetSpec("A330F", 18, 61, 475, 7400, 880, 85_000, 4.2, 2800, 18_000,
-                MntCycles: 42, MntFlightMinutes: 5000, MntElapsedMinutes: 2 * 10080, MntDurationMinutes: 540),
+                MntCycles: 42, MntFlightMinutes: 5000, MntElapsedMinutes: 2 * 10080, MntDurationMinutes: 540, RangeMaxKm: 10500),
             new FleetSpec("A300F", 30, 45, 320, 6600, 840, 60_000, 3.4, 2200, 12_000,
-                MntCycles: 44, MntFlightMinutes: 4500, MntElapsedMinutes: 2 * 10080, MntDurationMinutes: 480),
+                MntCycles: 44, MntFlightMinutes: 4500, MntElapsedMinutes: 2 * 10080, MntDurationMinutes: 480, RangeMaxKm: 9000),
             new FleetSpec("B757F", 25, 29, 239, 5800, 850, 45_000, 2.6, 1500, 10_000,
-                MntCycles: 44, MntFlightMinutes: 4500, MntElapsedMinutes: 2 * 10080, MntDurationMinutes: 420),
+                MntCycles: 44, MntFlightMinutes: 4500, MntElapsedMinutes: 2 * 10080, MntDurationMinutes: 420, RangeMaxKm: 8000),
             new FleetSpec("B737F", 25, 23, 190, 3700, 820, 38_000, 2.4, 1200, 9_000,
-                MntCycles: 48, MntFlightMinutes: 4200, MntElapsedMinutes: 2 * 10080, MntDurationMinutes: 420),
+                MntCycles: 48, MntFlightMinutes: 4200, MntElapsedMinutes: 2 * 10080, MntDurationMinutes: 420, RangeMaxKm: 5500),
         ],
         // the base itinerary starts with only 50% of its flights mandatory: set I is
         // 625 mandatory + 625 optional out of the 1,250-flight schedule

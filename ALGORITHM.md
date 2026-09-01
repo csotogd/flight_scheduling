@@ -209,6 +209,23 @@ rotation fixed costs are paid. The class stays implemented, tested and off by de
 
 ## 4. Engineering layer
 
+- **Airline configuration files**: `acsp profile CODE OUT.json` exports any built-in
+  archetype as an editable JSON (hubs, fleet counts/capacities/costs, the payload-range
+  curve per fleet, curfews, cargo handling time, demand generation, deliver-all);
+  `generate --airline OUT.json` consumes it anywhere a built-in code is accepted.
+- **Payload-range curve**: per fleet, `rangeKm` (full payload) → `rangeMaxKm` (reached at
+  `payloadAtMaxRangeT`, default half payload; beyond it the leg is unflyable even empty).
+  Enters the optimization exactly and linearly as the per-(leg, fleet) weight-capacity
+  coefficient — a 777F offers fewer tonnes on a 12,000 km leg than on a 3,000 km one, and
+  the LP decides with that truth at zero extra cost. 0 = classic single-range model.
+- **Night curfews**: per airport, no ARRIVALS in `[curfewStart, curfewEnd)` minutes-of-day
+  (default 00:00–06:00 at non-hubs; hubs run the night sort and stay open). The generator
+  and the flight proposer postpone departures until arrivals clear the window; the
+  feasibility checker enforces it on every incumbent.
+- **Cargo handling time**: shipments load/unload in `cargoHandlingMinutes` (default 30)
+  at each end — cargo cannot catch a flight departing earlier than avail + handling and
+  is only delivered handling minutes after final arrival. Enforced consistently in the
+  path pricer and the independent path feasibility check.
 - **LP backends**: `ILpSolver` P/Invoke wrappers over HiGHS (bundled/Homebrew) and IBM
   CPLEX (auto-detected under `CPLEX_Studio*`; `ACSP_LP_BACKEND` overrides). Both pass the
   same dual-convention contract tests; measured 1.5–3.4× faster solves with CPLEX on the
