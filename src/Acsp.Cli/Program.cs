@@ -14,6 +14,7 @@ return args switch
     ["cover", .. var rest] => Cover(rest),
     ["template", .. var rest] => Template(rest),
     ["benchmark", .. var rest] => Benchmark(rest),
+    ["regional-bench", .. var rest] => RegionalBench(rest),
     ["diag", .. var rest] => Diag(rest),
     _ => Usage(),
 };
@@ -239,6 +240,68 @@ static string Opt(string[] a, string name, string def)
 }
 
 static bool Flag(string[] a, string name) => Array.IndexOf(a, "--" + name) >= 0;
+
+static int RegionalBench(string[] a)
+{
+    // A/B experiment for the geographic decomposition: one shared base incumbent, then the
+    // SAME extra budget spent (A) continuing the global solve vs (B) cycling regional blocks.
+    var inst = LoadInstance(a[0]);
+    if (inst is null) return 2;
+    double baseTime = double.Parse(Opt(a, "base-time", "900"));
+    double armTime = double.Parse(Opt(a, "arm-time", "1800"));
+    double blockTime = double.Parse(Opt(a, "block-time", "450"));
+
+    Console.WriteLine($"== base solve ({baseTime:F0}s)");
+    var cover = CoverConstructor.Build(inst);
+    if (cover.Solution is not null) SolutionAssembler.AssembleRotations(inst, cover.Solution);
+    var basePbc = new BranchAndPrice(inst, new BpcOptions
+    {
+        TimeLimitSeconds = baseTime, SeedSolution = cover.Solution, LoadSeedFlows = true,
+        LocalBranching = true, MipHeuristicTimeLimit = Math.Max(20, baseTime * 0.3),
+        CollectColumnPool = true,
+    });
+    basePbc.Progress += p => { if (p.Phase.StartsWith("incumbent")) Console.WriteLine(
+        $"  base [{p.ElapsedSeconds,7:F1}s] inc {p.Incumbent,15:F0} {p.Phase}"); };
+    var baseRes = basePbc.Solve();
+    if (baseRes.Best is null) { Console.WriteLine("base solve found no incumbent"); return 2; }
+    double p0 = baseRes.Objective;
+    Console.WriteLine($"base incumbent: {p0:F0} (gap {baseRes.Gap:P1})");
+
+    Console.WriteLine($"== arm A: global continuation ({armTime:F0}s)");
+    var armA = new BranchAndPrice(inst, new BpcOptions
+    {
+        TimeLimitSeconds = armTime, SeedSolution = baseRes.Best, LoadSeedFlows = false,
+        SeedPaths = baseRes.PathPool, SeedStrings = baseRes.StringPool,
+        LocalBranching = true, MipHeuristicTimeLimit = Math.Max(20, armTime * 0.3),
+    });
+    armA.Progress += p => { if (p.Phase.StartsWith("incumbent")) Console.WriteLine(
+        $"  A [{p.ElapsedSeconds,7:F1}s] inc {p.Incumbent,15:F0} {p.Phase}"); };
+    var resA = armA.Solve();
+    double pA = Math.Max(p0, resA.Objective);
+    Console.WriteLine($"arm A: {pA:F0} ({pA - p0:+0;-0;+0} vs base)");
+
+    Console.WriteLine($"== arm B: regional cycle (blocks {blockTime:F0}s, total {armTime:F0}s)");
+    var reg = new RegionalOptimizer(inst, new RegionalOptions
+    {
+        BlockTimeLimitSeconds = blockTime, Cycles = 99, TotalTimeLimitSeconds = armTime,
+    });
+    reg.Progress += Console.WriteLine;
+    var (bestB, pB, blocksLog) = reg.Run(baseRes.Best);
+    Console.WriteLine($"arm B: {pB:F0} ({pB - p0:+0;-0;+0} vs base)");
+    foreach (var b in blocksLog)
+        Console.WriteLine($"  [{b.Region}] {b.Flights}f/{b.Ods}od " +
+            $"{b.ProfitBefore:F0} -> {b.ProfitAfter:F0} ({b.Seconds:F0}s) {b.Note}");
+
+    var feasB = FeasibilityChecker.Check(inst, bestB);
+    Console.WriteLine($"arm B feasibility: {(feasB.IsFeasible ? "OK" : feasB.ToString())}");
+    Console.WriteLine($"VERDICT: base {p0:F0} | global +{pA - p0:F0} | regional +{pB - p0:F0} " +
+        $"-> {(pB > pA ? "REGIONAL wins" : pA > pB ? "GLOBAL wins" : "tie")}");
+    Directory.CreateDirectory("results");
+    File.AppendAllText("results/regional-bench.csv",
+        $"{DateTime.Now:yyyy-MM-dd HH:mm},{inst.Name},{baseTime},{armTime},{blockTime}," +
+        $"{p0:F0},{pA:F0},{pB:F0}\n");
+    return 0;
+}
 
 static int ProfileCmd(string[] a)
 {
