@@ -7,6 +7,11 @@ solver and an **autonomous network-design loop** around it — and the supportin
 engineering (dual LP backends, Excel round-trip, verification). Paper section numbers
 refer to OR Spectrum 35:325–362.
 
+All airlines named in this document are fictional. RC/IC/MI/EX are the paper's synthetic
+archetypes; GI ("Global Integrator") and RLA ("Real-Life-scale Airline") were added by this
+repository, with every cost, demand figure, fleet mix and hub set estimated by Claude (an
+AI assistant) for plausibility — no real-airline data is used or implied anywhere.
+
 ## 1. Core: the paper's method (summary)
 
 The ACSP integrates flight selection, fleet assignment, rotation planning (with
@@ -310,4 +315,7 @@ decisions and feasibility were never affected.
   Warm-starting columns across design rounds and pricing parallelization are the obvious
   next steps.
 - Design rounds re-solve from scratch; no cross-round warm start yet.
-- Instances are synthetic (calibrated to the paper's Tables 1–2), not real airline data.
+- Instances are synthetic and entirely fictional (calibrated in scale to the paper's
+  Tables 1–2), not real airline data. All costs, demands, fleets and hub sets — including
+  the GI and RLA archetypes — are plausibility estimates produced by Claude (an AI
+  assistant), with no relation to any real company's figures.

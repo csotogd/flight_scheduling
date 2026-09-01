@@ -2,7 +2,9 @@
 
 **An optimizer that designs a cargo airline's weekly network end-to-end: which flights to fly, which aircraft type flies each one, how the physical fleet rotates through them (maintenance included), and which shipments travel on which itineraries — all decided *together*, in one mathematical model.**
 
-Measured on industry-scale synthetic instances, letting the tool design the network autonomously lifts weekly operating profit by **+240%** (regional carrier), **+67%** (mid-size international), and **+110%** on a GI-scale network with 1,250+ weekly flights and 9,000+ origin–destination demands.
+Measured on industry-scale synthetic instances, letting the tool design the network autonomously lifts weekly operating profit by **+240%** (regional carrier), **+67%** (mid-size international), and **+110%** on an integrator-scale network with 1,250+ weekly flights and 9,000+ origin–destination demands.
+
+> 🧪 **All data is fictional.** Every airline in this repository is synthetic: the four archetypes from the paper (RC, IC, MI, EX) plus two added here — **GI** ("Global Integrator") and **RLA** ("Real-Life-scale Airline"). All costs, demand volumes, aircraft fleets, and hub choices are **plausibility estimates produced by Claude (Anthropic's AI assistant)**, calibrated in scale to the paper's published Tables 1–2. Nothing in this repository is data from, or a claim about, any real company.
 
 > 📐 **New here?** Read [the interactive algorithm explainer](docs/branch-and-price.html) *(open locally in a browser, or via GitHub Pages)* for a visual walkthrough of branch-and-price: the master problem, pricing, constraints, cuts, and how they compose into the full system. The deep technical report is [ALGORITHM.md](ALGORITHM.md).
 
@@ -261,7 +263,7 @@ Autonomous design, batch 100, 6 rounds (details and scaling experiments in [ALGO
 
 On GI-I the designed network operates ~1,300 own flights with 111 of 148 aircraft, serves 73.4% of 35,153 t of weekly demand, and books 21 external charters ($0.47M) for demand no own-fleet candidate can reach. Backend comparison (same instance, same limits): CPLEX solves 1.5–3.4× faster than HiGHS across the GI set; at GI-III scale both are pricing-bound, not LP-bound.
 
-Full benchmark output: [results/RESULTS.md](results/RESULTS.md).
+Full benchmark output lands in `results/RESULTS.md` when you run the benchmark locally (generated instances and results are not committed). All figures above are for the fictional airlines described in the data note at the top — synthetic demand, AI-estimated costs and fleets.
 
 ---
 
@@ -269,7 +271,7 @@ Full benchmark output: [results/RESULTS.md](results/RESULTS.md).
 
 - The design loop is **greedy across rounds** — inner solves carry exact bounds, but no global optimality claim spans rounds.
 - With maintenance constraints the string pricer's label limit makes the procedure approximate (identical trade-off to the paper's §9).
-- Instances are **synthetic**, calibrated to the paper's Tables 1–2 — not real airline data; absolute dollar figures are not comparable to the paper's Table 3.
+- Instances are **synthetic and entirely fictional** — costs, demands, fleets, and hubs are AI-estimated (calibrated in scale to the paper's Tables 1–2), not real airline data; absolute dollar figures are not comparable to the paper's Table 3.
 - GI-III-scale root column generation is pricing-bound; a faster LP backend doesn't help. Pricing parallelization is the obvious next lever.
 
 ---
@@ -290,6 +292,6 @@ Full benchmark output: [results/RESULTS.md](results/RESULTS.md).
 │   └── Acsp.Web/            ← dashboard (map, Gantt, P&L, live convergence)
 ├── tests/Acsp.Tests/        ← verification suite
 ├── profiles/                ← airline profile JSONs (e.g. RLA)
-├── instances/               ← generated instances
-└── results/                 ← benchmark outputs
+├── instances/               ← generated instances (local, not committed)
+└── results/                 ← benchmark outputs (local, not committed)
 ```

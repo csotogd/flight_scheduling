@@ -111,9 +111,12 @@ public sealed record AirlineProfile(
         RateMultiplier: 2.2);
 
     /// <summary>
-    /// A global integrator archetype beyond the paper's four: GI-style hub network (LEJ, CVG,
-    /// HKG, BAH), a larger heterogeneous fleet (140 aircraft), and a DENSE demand matrix —
-    /// every station originates O&amp;Ds towards many destinations, not just hub-anchored flows.
+    /// "GI" — Global Integrator, a FICTIONAL archetype beyond the paper's four: a four-hub
+    /// intercontinental express network, a larger heterogeneous fleet (140 aircraft), and a
+    /// DENSE demand matrix — every station originates O&amp;Ds towards many destinations, not
+    /// just hub-anchored flows. Like every profile in this file, all figures (hub choices,
+    /// fleet mix, capacities, costs, demand volumes) are plausibility estimates produced by
+    /// Claude (an AI assistant) — not data from, or claims about, any real airline.
     /// </summary>
     public static readonly AirlineProfile GI = new(
         Code: "GI", HubCodes: ["LEJ", "CVG", "HKG", "BAH"], NumCargoDestinations: 150,
@@ -138,10 +141,11 @@ public sealed record AirlineProfile(
         RateMultiplier: 2.2, DenseDemand: true);
 
     /// <summary>
-    /// The GI archetype brought closer to the real network: Brussels joins the hub set
-    /// (5 hubs) and the demand matrix follows a gravity model — 60% of ALL ordered station
-    /// pairs carry demand, closer pairs more likely, so cargo routinely needs multi-hub
-    /// itineraries (LEJ→BRU→CVG style) to reach its destination.
+    /// "RLA" — Real-Life-scale Airline: the fictional GI archetype pushed to realistic scale.
+    /// More hubs across more regions and a demand matrix following a gravity model — 60% of
+    /// ALL ordered station pairs carry demand, closer pairs more likely, so cargo routinely
+    /// needs multi-hub itineraries (LEJ→BRU→CVG style) to reach its destination. Entirely
+    /// fictional: every number is an AI-produced estimate.
     /// </summary>
     public static readonly AirlineProfile RLA = GI with
     {
