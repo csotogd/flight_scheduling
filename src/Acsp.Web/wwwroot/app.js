@@ -46,8 +46,27 @@ async function init() {
     if (!e.target.value) return;
     const sol = await (await fetch(`/api/solutions/${e.target.value}`)).json();
     renderSolution(sol);
+    setWs("planner");
   };
+  document.querySelectorAll("#wsTabs button").forEach(b => b.onclick = () => setWs(b.dataset.ws));
+  setWs(localStorage.getItem("acspWs") || "planner");
   refreshSaved();
+}
+
+/* Workspace tabs: Planner / OR Engineer / Data. Panels carry ws-p / ws-e / ws-d classes;
+   the body attribute decides which family is visible (pure CSS filtering). */
+function setWs(ws) {
+  document.body.dataset.ws = ws;
+  localStorage.setItem("acspWs", ws);
+  document.querySelectorAll("#wsTabs button")
+    .forEach(b => b.classList.toggle("on", b.dataset.ws === ws));
+}
+
+/* Header status chip: the one place a running job is always visible. */
+function chip(state, text) {
+  const c = $("jobChip");
+  c.className = "chip " + state;
+  $("jobChipText").textContent = text;
 }
 
 async function refreshSaved() {
@@ -98,6 +117,7 @@ async function showInput() {
       ? `/api/instance?uploadId=${upload.uploadId}`
       : `/api/instance?airline=${req.airline}&set=${req.set}&seed=${req.seed}`)).json();
     $("inputSection").classList.remove("hidden");
+    setWs("data");
     $("inputName").textContent = d.name +
       ` — weekly periodic schedule, ${d.periodMinutes.toLocaleString()} min horizon`;
     const s = d.summary;
@@ -203,6 +223,7 @@ async function uploadExcel(e) {
     method: "POST", body: file,
   })).json();
   $("uploadPanel").classList.remove("hidden");
+  setWs("data");
   const msgs = res.messages || [];
   $("uploadMessages").innerHTML = msgs.length
     ? "<tr><th>severity</th><th>sheet</th><th>row</th><th>message</th></tr>" +
@@ -345,18 +366,23 @@ function followJob(job) {
   currentJob = job.id;
   series = [];
   $("jobName").textContent = job.instance;
+  $("emptyState").classList.add("hidden");
   $("progressSection").classList.remove("hidden");
   $("dashboard").classList.add("hidden");
+  if (document.body.dataset.ws === "data") setWs("planner");
+  chip("running", "starting · " + job.instance);
   const es = new EventSource(`/api/jobs/${job.id}/events`);
   es.onmessage = async ev => {
     const e = JSON.parse(ev.data);
     if (e.type === "design-phase") {
       designPhase(e);
+      chip("running", `design round ${e.round} · ${e.phase === "proposing" ? "proposing" : "done"}`);
     } else if (e.type === "progress") {
       $("progressStats").textContent =
         `t ${e.t}s   nodes ${e.nodes}   incumbent ${fmt(e.incumbent)}   ` +
         `bound ${fmt(e.bound)}   gap ${e.gap != null ? pct(e.gap) : "—"}   ` +
         `columns ${e.cols}   cuts ${e.cuts}   ${e.phase}`;
+      chip("running", `${e.phase || "solving"} · gap ${e.gap != null ? pct(e.gap) : "—"} · ${e.t}s`);
       if (e.incumbent != null || e.bound != null)
         series.push({ t: e.t, incumbent: e.incumbent, bound: e.bound });
       drawConvergence();
@@ -368,6 +394,7 @@ function followJob(job) {
         refreshSaved();
       } else {
         $("progressStats").textContent = "no solution: " + (e.error || "error");
+        chip("error", e.error ? "failed: " + e.error : "failed");
       }
     }
   };
@@ -459,23 +486,25 @@ function drawConvergence() {
   for (let i = 0; i <= 4; i++) {
     const v = vMin + (vMax - vMin) * i / 4;
     svgEl(svg, "line", { x1: m.l, x2: W - m.r, y1: Y(v), y2: Y(v), stroke: "#dddddd", "stroke-width": .5 });
-    svgEl(svg, "text", { x: m.l - 6, y: Y(v) + 4, fill: "#555555", "font-size": 10, "text-anchor": "end" }, fmt(v));
+    svgEl(svg, "text", { x: m.l - 6, y: Y(v) + 4, fill: "#647084", "font-size": 10, "text-anchor": "end" }, fmt(v));
   }
   const line = (key, color) => {
     const pts = series.filter(s => s[key] != null).map(s => `${X(s.t)},${Y(s[key])}`);
     if (pts.length > 1)
       svgEl(svg, "polyline", { points: pts.join(" "), fill: "none", stroke: color, "stroke-width": 1.6 });
   };
-  line("bound", "#cc0000");
-  line("incumbent", "#009933");
-  svgEl(svg, "text", { x: W - 12, y: 14, fill: "#cc0000", "font-size": 10, "text-anchor": "end" }, "upper bound");
-  svgEl(svg, "text", { x: W - 12, y: 26, fill: "#009933", "font-size": 10, "text-anchor": "end" }, "incumbent");
+  line("bound", "#c03434");
+  line("incumbent", "#17805c");
+  svgEl(svg, "text", { x: W - 12, y: 14, fill: "#c03434", "font-size": 10, "text-anchor": "end" }, "upper bound");
+  svgEl(svg, "text", { x: W - 12, y: 26, fill: "#17805c", "font-size": 10, "text-anchor": "end" }, "incumbent");
 }
 
 // ------------------------------------------------------------------ dashboard
 
 function renderSolution(sol) {
   $("dashboard").classList.remove("hidden");
+  $("emptyState").classList.add("hidden");
+  chip("done", `done · profit $${fmt(sol.pnl.profit)} · gap ${pct(sol.stats.gap)}`);
   const solName = (sol.design ? sol.instance.replace("+prop", "") + "+design" : sol.instance)
     + (sol.withMaintenance ? "-mnt" : "");
   $("xlsxBtn").href = `/api/solutions/${encodeURIComponent(solName)}/itinerary.xlsx`;
@@ -535,7 +564,7 @@ function renderTimeSpace(sol) {
   const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
   for (let d = 0; d < 7; d++) {
     svgEl(svg, "line", { x1: X(d * 1440), x2: X(d * 1440), y1: m.t - 6, y2: H - m.b, stroke: "#dddddd", "stroke-width": .6 });
-    svgEl(svg, "text", { x: X(d * 1440 + 720), y: 13, fill: "#555555", "font-size": 10, "text-anchor": "middle" }, days[d]);
+    svgEl(svg, "text", { x: X(d * 1440 + 720), y: 13, fill: "#647084", "font-size": 10, "text-anchor": "middle" }, days[d]);
   }
   // airports touched by each flight (for the station highlight filter)
   const flightAirports = {};
@@ -561,7 +590,7 @@ function renderTimeSpace(sol) {
     }
     for (const [id, el] of Object.entries(labelEls)) {
       const on = sel != null && +id === sel;
-      el.setAttribute("fill", on ? "#cc0000" : ap[id].hub ? "#cc0000" : "#555555");
+      el.setAttribute("fill", on ? "#c03434" : ap[id].hub ? "#c03434" : "#647084");
       el.setAttribute("font-weight", on || ap[id].hub ? "bold" : "normal");
       el.setAttribute("text-decoration", on ? "underline" : "none");
     }
@@ -570,7 +599,7 @@ function renderTimeSpace(sol) {
   rowsIds.forEach((id, i) => {
     svgEl(svg, "line", { x1: m.l, x2: W - m.r, y1: Y(i), y2: Y(i), stroke: "#eeeeee", "stroke-width": .5 });
     const label = svgEl(svg, "text", { x: 6, y: Y(i) + 3,
-      fill: ap[id].hub ? "#cc0000" : "#555555", "font-size": 10,
+      fill: ap[id].hub ? "#c03434" : "#647084", "font-size": 10,
       "font-weight": ap[id].hub ? "bold" : "normal", cursor: "pointer",
       "pointer-events": "none" }, ap[id].code);
     // generous invisible hit area over the whole label column of the row
@@ -589,7 +618,7 @@ function renderTimeSpace(sol) {
   });
 
   let skipped = 0;
-  const colors = { mandatory: "#0066cc", optional: "#009933", external: "#ff8800" };
+  const colors = { mandatory: "#1f4e8c", optional: "#17805c", external: "#b26a00" };
   for (const { f, l, external } of activeLegs) {
     const r1 = rowOf[l.from], r2 = rowOf[l.to];
     if (r1 === undefined || r2 === undefined) { skipped++; continue; }
@@ -694,10 +723,10 @@ function renderMap(sol) {
 
   const ap = Object.fromEntries(sol.airports.map(a => [a.id, a]));
   const styles = {
-    mandatory: { stroke: "#0066cc", op: .8 },
-    optSel: { stroke: "#009933", op: .85 },
-    optRej: { stroke: "#aaaaaa", op: .7, dash: "4 4" },
-    external: { stroke: "#ff8800", op: .55 },
+    mandatory: { stroke: "#1f4e8c", op: .8 },
+    optSel: { stroke: "#17805c", op: .85 },
+    optRej: { stroke: "#b6bcc4", op: .7, dash: "4 4" },
+    external: { stroke: "#b26a00", op: .55 },
   };
   const legLine = (l, st, width) => {
     const a = ap[l.from], b = ap[l.to];
@@ -734,13 +763,13 @@ function renderMap(sol) {
   for (const a of sol.airports) {
     const g = svgEl(svg, "circle", {
       cx: X(a.lon), cy: Y(a.lat), r: a.hub ? 6 : 2.6,
-      fill: a.hub ? "#cc0000" : "#336699", stroke: "#ffffff", "stroke-width": 1,
+      fill: a.hub ? "#c03434" : "#1f4e8c", stroke: "#ffffff", "stroke-width": 1,
     });
     svgEl(g, "title", {}, `${a.code} — ${a.name}${a.hub ? " (hub)" : ""}`);
     // every station gets its code next to the dot (hubs larger and red)
     const label = svgEl(svg, "text", {
       x: X(a.lon) + (a.hub ? 8 : 4), y: Y(a.lat) + 3,
-      fill: a.hub ? "#cc0000" : "#333333",
+      fill: a.hub ? "#c03434" : "#333333",
       "font-size": a.hub ? 11 : 7.5,
       "font-weight": a.hub ? "bold" : "normal",
       "paint-order": "stroke", stroke: "#ffffff", "stroke-width": 2,
@@ -766,16 +795,16 @@ function renderGantt(sol) {
   const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
   for (let d = 0; d < 7; d++) {
     svgEl(svg, "line", { x1: X(d * 1440), x2: X(d * 1440), y1: m.t - 8, y2: H, stroke: "#dddddd", "stroke-width": .6 });
-    svgEl(svg, "text", { x: X(d * 1440 + 720), y: 14, fill: "#555555", "font-size": 10, "text-anchor": "middle" }, days[d]);
+    svgEl(svg, "text", { x: X(d * 1440 + 720), y: 14, fill: "#647084", "font-size": 10, "text-anchor": "middle" }, days[d]);
   }
   const fleetColors = {};
-  const palette = ["#0066cc", "#009933", "#9933cc", "#ff8800", "#009999"];
+  const palette = ["#1f4e8c", "#17805c", "#7a5fb5", "#b26a00", "#0e7f8a"];
   sol.fleets.forEach((f, i) => fleetColors[f.code] = palette[i % palette.length]);
 
   const flightById = Object.fromEntries(sol.flights.map(f => [f.id, f]));
   rows.forEach((r, i) => {
     const y = m.t + i * rowH;
-    svgEl(svg, "text", { x: 6, y: y + 15, fill: "#555555", "font-size": 10 },
+    svgEl(svg, "text", { x: 6, y: y + 15, fill: "#647084", "font-size": 10 },
       `${r.fleet} rot.${r.id + 1} (${r.aircraft} a/c)`);
     for (const s of r.strings) {
       for (const fid of s.flightIds) {
@@ -795,7 +824,7 @@ function renderGantt(sol) {
       }
       if (sol.withMaintenance) {
         const mnt = svgEl(svg, "rect", {
-          x: X(s.arr), y: y + 4, width: 5, height: rowH - 10, fill: "#cc0000",
+          x: X(s.arr), y: y + 4, width: 5, height: rowH - 10, fill: "#c03434",
         });
         svgEl(mnt, "title", {}, "maintenance stop");
       }

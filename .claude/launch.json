@@ -4,8 +4,8 @@
     {
       "name": "acsp-web",
       "runtimeExecutable": "/Users/carlossoto/.dotnet/dotnet",
-      "runtimeArgs": ["run", "--project", "src/Acsp.Web", "--no-launch-profile"],
-      "port": 5170
+      "runtimeArgs": ["run", "--project", "src/Acsp.Web", "--", "--urls=http://localhost:5171"],
+      "port": 5171
     }
   ]
 }

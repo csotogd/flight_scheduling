@@ -3,43 +3,99 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ACSP — Air Cargo Scheduling</title>
+<title>ACSP — Network Studio</title>
 <link rel="stylesheet" href="style.css">
 </head>
-<body>
-<header>
-  <h1>ACSP <span class="sub">Air cargo scheduling — first version</span></h1>
-  <div class="controls">
-    <select id="airline"></select>
-    <select id="set">
-      <option value="1">Set I (tactical)</option>
-      <option value="2">Set II (more optionals)</option>
-      <option value="3">Set III (strategic)</option>
-    </select>
-    <label>seed <input id="seed" type="number" value="1" min="1" max="99"></label>
-    <label><input id="maintenance" type="checkbox"> maintenance</label>
-    <label>limit <input id="timeLimit" type="number" value="120" min="5" step="5"> s</label>
-    <button id="solveBtn">Solve</button>
-    <button id="designBtn" title="Autonomous design: propose candidate flights in rounds, re-optimize, keep what pays off">Auto-design</button>
-    <label>batch <input id="designBatch" type="number" value="100" min="5" step="5"></label>
-    <label>rounds <input id="designRounds" type="number" value="6" min="1" max="30"></label>
-    <button id="inputBtn">View input data</button>
-    <a id="templateBtn" class="btn-link" href="/api/template.xlsx" download>Excel ↓</a>
-    <button id="uploadBtn" title="Upload an edited instance workbook (same format as the Excel download)">Upload Excel…</button>
-    <input type="file" id="uploadFile" accept=".xlsx" hidden>
-    <span id="sourceBadge" class="hidden badge">uploaded: <b id="sourceName"></b>
-      <button id="sourceClear" class="small">×</button></span>
-    <select id="savedSolutions"><option value="">— saved solutions —</option></select>
+<body data-ws="planner">
+
+<header id="appbar">
+  <div class="bar-row bar-top">
+    <div class="brand">ACSP <span class="brand-sub">Network Studio</span></div>
+    <nav class="ws-tabs" id="wsTabs">
+      <button data-ws="planner" class="on" title="Network results: map, P&amp;L, rotations, demand served">Planner</button>
+      <button data-ws="engineer" title="Solver telemetry: convergence, bounds, time-space network">OR Engineer</button>
+      <button data-ws="data" title="Model input: fleets, airports, flights, demand; Excel round-trip">Data</button>
+    </nav>
+    <div id="jobChip" class="chip idle" title="Optimizer status">
+      <span class="chip-dot"></span><span id="jobChipText">idle</span>
+    </div>
+  </div>
+
+  <div class="bar-row toolbar">
+    <div class="group">
+      <div class="glabel">Scenario</div>
+      <div class="gbody">
+        <select id="airline" title="Airline archetype (all data fictional)"></select>
+        <select id="set" title="Instance set: how many optional candidate flights exist">
+          <option value="1">Set I · tactical</option>
+          <option value="2">Set II · more optionals</option>
+          <option value="3">Set III · strategic</option>
+        </select>
+        <label title="Random seed for the synthetic instance">seed <input id="seed" type="number" value="1" min="1" max="99"></label>
+        <label title="Enforce A-check maintenance in rotations"><input id="maintenance" type="checkbox"> maintenance</label>
+        <span id="sourceBadge" class="hidden badge">Excel: <b id="sourceName"></b>
+          <button id="sourceClear" class="small" title="Back to the generated scenario">×</button></span>
+      </div>
+    </div>
+    <div class="gsep"></div>
+    <div class="group">
+      <div class="glabel">Optimize</div>
+      <div class="gbody">
+        <label title="Wall-clock budget for the solve">limit <input id="timeLimit" type="number" value="120" min="5" step="5"> s</label>
+        <button id="solveBtn" class="primary" title="One integrated solve of the current scenario">Solve schedule</button>
+      </div>
+    </div>
+    <div class="gsep"></div>
+    <div class="group">
+      <div class="glabel">Auto-design</div>
+      <div class="gbody">
+        <label title="Candidate flights proposed per round">batch <input id="designBatch" type="number" value="100" min="5" step="5"></label>
+        <label title="Maximum design rounds">rounds <input id="designRounds" type="number" value="6" min="1" max="30"></label>
+        <button id="designBtn" class="go" title="Autonomous design: propose candidate flights in rounds, re-optimize, keep what pays">Design network</button>
+      </div>
+    </div>
+    <div class="gsep"></div>
+    <div class="group">
+      <div class="glabel">Data</div>
+      <div class="gbody">
+        <button id="inputBtn" title="Inspect everything the optimizer receives">Input data</button>
+        <a id="templateBtn" class="btn-link" href="/api/template.xlsx" download title="Download this scenario as an editable Excel workbook">Excel ↓</a>
+        <button id="uploadBtn" title="Upload an edited instance workbook (same format as the Excel download)">Upload ↑</button>
+        <input type="file" id="uploadFile" accept=".xlsx" hidden>
+        <select id="savedSolutions" title="Reopen a previously solved schedule"><option value="">saved solutions…</option></select>
+      </div>
+    </div>
   </div>
 </header>
 
-<div id="uploadPanel" class="panel hidden">
-  <div class="panel-title">Excel import <button id="uploadCloseBtn" class="small">close</button></div>
-  <div id="uploadSummary" class="stats-line"></div>
-  <table id="uploadMessages"></table>
-</div>
+<main>
 
-<div id="designPanel" class="panel hidden">
+<!-- ============================================= shared: run telemetry -->
+<section id="progressSection" class="hidden ws ws-p ws-e">
+  <div class="panel">
+    <div class="panel-title">Optimizer run <span id="jobName" class="sub"></span>
+      <button id="cancelBtn" class="small danger">stop</button></div>
+    <div id="progressStats" class="stats-line">—</div>
+    <svg id="convergence" viewBox="0 0 860 200" preserveAspectRatio="none"></svg>
+    <div class="chart-legend"><span class="lg lg-bound">upper bound</span><span class="lg lg-inc">incumbent (best feasible)</span></div>
+  </div>
+</section>
+
+<!-- ============================================= planner: empty state -->
+<section id="emptyState" class="ws ws-p">
+  <div class="panel empty">
+    <h2>Design a cargo airline's week</h2>
+    <p>Pick a scenario in the toolbar, then either <b>Solve schedule</b> (one integrated
+    optimization of flights, fleets, rotations and cargo routing) or <b>Design network</b>
+    (the tool invents candidate flights round by round and keeps what pays).
+    Results appear here; solver telemetry lives in the <b>OR Engineer</b> tab; the model's
+    inputs and the Excel round-trip live in <b>Data</b>.</p>
+    <p class="fine">All airline profiles are fictional — costs, demands, fleets and hubs are AI-estimated.</p>
+  </div>
+</section>
+
+<!-- ============================================= design run (planner + engineer) -->
+<div id="designPanel" class="panel hidden ws ws-p ws-e">
   <div class="panel-title">Autonomous network design
     <span id="designStatus" class="sub"></span></div>
   <div id="designSummary" class="stats-line"></div>
@@ -48,7 +104,76 @@
   <div class="table-scroll"><table id="designProposals"></table></div>
 </div>
 
-<section id="inputSection" class="hidden">
+<div id="proposalsPanel" class="panel hidden ws ws-p">
+  <div class="panel-title">Proposed candidate flights <span class="sub">planner module — enter as optional, the optimizer decides</span></div>
+  <div id="proposalsSummary" class="stats-line"></div>
+  <div class="table-scroll"><table id="proposalsTable"></table></div>
+</div>
+
+<!-- ============================================= results dashboard -->
+<section id="dashboard" class="hidden">
+  <div id="kpis" class="kpi-row ws ws-p ws-e"></div>
+
+  <div class="actions ws ws-p">
+    <button id="proposeBtn" title="Generate candidate flights aimed at demand this schedule leaves on the ground, then re-optimize">Propose flights for unserved demand</button>
+    <a id="xlsxBtn" class="btn-link" href="#" download title="Full itinerary workbook: rotations, legs, shipments">Itinerary Excel ↓</a>
+  </div>
+
+  <div class="panel ws ws-p">
+    <div class="panel-title">Flight network <span class="legend">
+      <span class="lg lg-mand">mandatory</span>
+      <span class="lg lg-opt">optional · selected</span>
+      <span class="lg lg-rej">optional · rejected</span>
+      <span class="lg lg-ext">external</span></span>
+    </div>
+    <div class="map-controls">
+      <label><input type="checkbox" id="mapHourMode"> hourly view</label>
+      <input type="range" id="mapHour" min="0" max="167" value="96" step="1" disabled>
+      <span id="mapHourLabel">all week (aggregated)</span>
+    </div>
+    <svg id="map" viewBox="0 0 1000 480"></svg>
+  </div>
+
+  <div class="two-col ws ws-p">
+    <div class="panel">
+      <div class="panel-title">O&amp;D demand <span id="odSummary" class="sub"></span></div>
+      <div class="table-scroll"><table id="odTable"></table></div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">Flights <span class="sub">by load factor</span></div>
+      <div class="table-scroll"><table id="flightTable"></table></div>
+    </div>
+  </div>
+
+  <div class="panel ws ws-p">
+    <div class="panel-title">Rotations <span class="sub">weekly Gantt per rotation</span></div>
+    <div id="ganttWrap"><svg id="gantt"></svg></div>
+  </div>
+
+  <div class="panel ws ws-e">
+    <div class="panel-title">Time-space network <span id="tsNote" class="sub"></span></div>
+    <div id="tsWrap"><svg id="timespace"></svg></div>
+  </div>
+</section>
+
+<!-- ============================================= data workspace -->
+<section class="ws ws-d">
+  <div class="panel empty">
+    <h2>Model data &amp; Excel round-trip</h2>
+    <p><b>Input data</b> shows everything the optimizer receives for the current scenario.
+    <b>Excel ↓</b> exports it as a workbook — airports, fleets, flights (one row per leg),
+    O&amp;D demand — for a planner to edit. <b>Upload ↑</b> brings the edited workbook back
+    with row-level validation; Solve and Design then run on the uploaded instance.</p>
+  </div>
+</section>
+
+<div id="uploadPanel" class="panel hidden ws ws-d">
+  <div class="panel-title">Excel import <button id="uploadCloseBtn" class="small">close</button></div>
+  <div id="uploadSummary" class="stats-line"></div>
+  <div class="table-scroll"><table id="uploadMessages"></table></div>
+</div>
+
+<section id="inputSection" class="hidden ws ws-d">
   <div class="panel">
     <div class="panel-title">Model input — <span id="inputName"></span>
       <button id="inputCloseBtn" class="small">close</button></div>
@@ -57,7 +182,7 @@
   <div class="two-col">
     <div class="panel">
       <div class="panel-title">Fleets</div>
-      <table id="inputFleets"></table>
+      <div class="table-scroll"><table id="inputFleets"></table></div>
     </div>
     <div class="panel">
       <div class="panel-title">Airports</div>
@@ -66,7 +191,7 @@
   </div>
   <div class="two-col">
     <div class="panel">
-      <div class="panel-title">Flights (master flight list)
+      <div class="panel-title">Flights <span class="sub">master flight list</span>
         <input id="flightFilter" class="filter" placeholder="filter: code / airport / kind"></div>
       <div class="table-scroll"><table id="inputFlights"></table></div>
     </div>
@@ -78,65 +203,7 @@
   </div>
 </section>
 
-<section id="progressSection" class="hidden">
-  <div class="panel">
-    <div class="panel-title">Branch &amp; price &amp; cut <span id="jobName"></span>
-      <button id="cancelBtn" class="small">stop</button></div>
-    <div id="progressStats" class="stats-line">—</div>
-    <svg id="convergence" viewBox="0 0 860 200" preserveAspectRatio="none"></svg>
-  </div>
-</section>
-
-<div id="proposalsPanel" class="panel hidden">
-  <div class="panel-title">Proposed candidate flights (planner module, outside the optimization)</div>
-  <div id="proposalsSummary" class="stats-line"></div>
-  <table id="proposalsTable"></table>
-</div>
-
-<section id="dashboard" class="hidden">
-  <div class="actions">
-    <button id="proposeBtn">Propose flights for unroutable demand and re-optimize</button>
-    <a id="xlsxBtn" class="btn-link" href="#" download>Download itinerary (Excel)</a>
-  </div>
-  <div id="kpis" class="kpi-row"></div>
-
-  <div class="two-col wide">
-    <div class="panel">
-      <div class="panel-title">Flight network <span class="legend">
-        <span class="lg lg-mand">mandatory</span>
-        <span class="lg lg-opt">optional (selected)</span>
-        <span class="lg lg-rej">optional (rejected)</span>
-        <span class="lg lg-ext">external</span></span>
-      </div>
-      <div class="map-controls">
-        <label><input type="checkbox" id="mapHourMode"> hourly view</label>
-        <input type="range" id="mapHour" min="0" max="167" value="96" step="1" disabled>
-        <span id="mapHourLabel">all week (aggregated)</span>
-      </div>
-      <svg id="map" viewBox="0 0 1000 480"></svg>
-    </div>
-    <div class="panel">
-      <div class="panel-title">Time-space network (selected schedule) <span id="tsNote" class="sub"></span></div>
-      <div id="tsWrap"><svg id="timespace"></svg></div>
-    </div>
-  </div>
-
-  <div class="panel">
-    <div class="panel-title">Rotations (weekly Gantt per rotation)</div>
-    <div id="ganttWrap"><svg id="gantt"></svg></div>
-  </div>
-
-  <div class="two-col">
-    <div class="panel">
-      <div class="panel-title">O&amp;D demand <span id="odSummary" class="sub"></span></div>
-      <table id="odTable"></table>
-    </div>
-    <div class="panel">
-      <div class="panel-title">Flights</div>
-      <table id="flightTable"></table>
-    </div>
-  </div>
-</section>
+</main>
 
 <script src="app.js"></script>
 </body>

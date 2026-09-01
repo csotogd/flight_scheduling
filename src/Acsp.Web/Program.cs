@@ -346,4 +346,9 @@ app.MapGet("/api/solutions/{name}", (string name) =>
     return Results.Text(File.ReadAllText(path), "application/json", Encoding.UTF8);
 });
 
-app.Run("http://localhost:5170");
+// Default port 5170; override with --urls=... or ASPNETCORE_URLS.
+if (app.Urls.Count == 0 && args.All(a => !a.StartsWith("--urls"))
+    && Environment.GetEnvironmentVariable("ASPNETCORE_URLS") is null or "")
+    app.Run("http://localhost:5170");
+else
+    app.Run();
