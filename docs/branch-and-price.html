@@ -74,7 +74,13 @@
   }
   h1 { font-size: clamp(30px, 5.5vw, 46px); line-height: 1.12; letter-spacing: -.02em; font-weight: 800; }
   .lede { font-size: 19px; color: var(--muted); margin-top: 18px; max-width: 46em; }
-  section { margin-top: 84px; }
+  .actmark {
+    margin-top: 96px; display: flex; align-items: center; gap: 14px;
+    color: var(--accent); font-weight: 800; font-size: 13px;
+    text-transform: uppercase; letter-spacing: .16em;
+  }
+  .actmark::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+  section { margin-top: 72px; }
   .secnum {
     display: inline-flex; align-items: center; justify-content: center;
     width: 30px; height: 30px; border-radius: 9px; margin-right: 10px;
@@ -84,7 +90,6 @@
   h2 { font-size: 27px; letter-spacing: -.015em; margin-bottom: 6px; }
   h3 { font-size: 19px; margin: 34px 0 8px; }
   p { margin: 12px 0; max-width: 46em; }
-  p.wide { max-width: none; }
   strong { font-weight: 650; }
   .figure {
     background: var(--panel); border: 1px solid var(--line); border-radius: 16px;
@@ -104,11 +109,10 @@
   }
   .card h4 { font-size: 15px; margin-bottom: 6px; display: flex; align-items: center; gap: 8px; }
   .card p { font-size: 14px; color: var(--muted); margin: 0; }
+  .card .who { display:block; margin-top: 10px; font-size: 11.5px; font-weight: 700; letter-spacing: .06em; }
+  .who.ours  { color: var(--path); }
+  .who.paper { color: var(--accent); }
   .dot { width: 10px; height: 10px; border-radius: 99px; display: inline-block; flex: none; }
-  .term {
-    border-bottom: 2px dotted var(--accent); cursor: help; position: relative;
-    font-weight: 600;
-  }
   code, .mono {
     font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
     font-size: .92em; background: var(--code-bg); border-radius: 6px; padding: 1.5px 6px;
@@ -128,6 +132,18 @@
   .tag.dual   { background: var(--soft-dual);   color: var(--dual); }
   .tag.cut    { background: var(--soft-cut);    color: var(--cut); }
   .tag.accent { background: var(--soft-accent); color: var(--accent); }
+  /* stats */
+  .stats {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 14px; margin: 26px 0 8px;
+  }
+  .stat {
+    border: 1px solid var(--line); border-radius: 16px; padding: 20px 20px 16px;
+    background: var(--panel); box-shadow: var(--shadow); text-align: center;
+  }
+  .stat .num { display: block; font-size: 40px; font-weight: 800; letter-spacing: -.02em; color: var(--path); font-variant-numeric: tabular-nums; }
+  .stat .lbl { display: block; margin-top: 4px; color: var(--muted); font-size: 13px; }
+  .statnote { color: var(--muted); font-size: 12.5px; margin-top: 4px; }
   /* constraint explorer */
   .rows { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
   .rowbtn {
@@ -162,13 +178,9 @@
     background: color-mix(in srgb, var(--soft-accent) 55%, transparent); min-height: 76px;
   }
   .narr b.phase { color: var(--accent); }
-  table.duals { border-collapse: collapse; font-size: 13px; width: 100%; }
-  table.duals th, table.duals td { padding: 5px 10px; text-align: right; border-bottom: 1px solid var(--line); }
-  table.duals th { color: var(--muted); font-weight: 600; text-align: right; }
-  table.duals td:first-child, table.duals th:first-child { text-align: left; }
   .flash { animation: flash 1s ease; }
   @keyframes flash { 0% { background: var(--soft-dual); } 100% { background: transparent; } }
-  .toggle-wrap { display: flex; gap: 8px; padding: 14px 18px 0; }
+  .toggle-wrap { display: flex; gap: 8px; padding: 14px 18px 0; flex-wrap: wrap; }
   .toggle-wrap button {
     font: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer;
     border-radius: 99px; padding: 6px 14px; border: 1px solid var(--line);
@@ -176,6 +188,21 @@
   }
   .toggle-wrap button.on { background: var(--soft-cut); border-color: var(--cut); color: var(--cut); }
   .toggle-wrap button.on.fixed { background: var(--soft-path); border-color: var(--path); color: var(--path); }
+  /* animated flight arcs */
+  .flow { stroke-dasharray: 10 7; animation: flow 1.1s linear infinite; }
+  @keyframes flow { to { stroke-dashoffset: -17; } }
+  @media (prefers-reduced-motion: reduce) {
+    .flow { animation: none; }
+    html { scroll-behavior: auto; }
+  }
+  /* design-loop arc states (JS drives the class) */
+  .cand    { stroke: var(--dual); stroke-width: 2.2; stroke-dasharray: 6 5; opacity: 1; transition: opacity .5s, stroke .5s; }
+  .adopted { stroke: var(--path); stroke-width: 3.2; stroke-dasharray: none; opacity: 1; transition: opacity .5s, stroke .5s; }
+  .evicted { stroke: var(--muted); stroke-width: 1.6; stroke-dasharray: 2 5; opacity: .18; transition: opacity .5s, stroke .5s; }
+  .hidden  { opacity: 0; transition: opacity .5s; }
+  #dsBar   { transition: width .8s cubic-bezier(.2,.8,.2,1); }
+  /* silo demo transitions */
+  #siloSvg [data-anim] { transition: opacity .55s; }
   footer { margin-top: 100px; color: var(--muted); font-size: 13.5px; border-top: 1px solid var(--line); padding-top: 24px; }
   a { color: var(--accent); }
 </style>
@@ -183,47 +210,161 @@
 <body>
 
 <nav>
-  <span class="brand">ACSP · the algorithm</span>
-  <a href="#problem">Problem</a>
+  <span class="brand">ACSP · the visual guide</span>
+  <a href="#value">Business</a>
+  <a href="#canvas">Canvas</a>
   <a href="#columns">Columns</a>
   <a href="#master">Master</a>
   <a href="#colgen">Column generation</a>
   <a href="#pricing">Pricing</a>
   <a href="#cuts">Cuts</a>
   <a href="#branching">Branching</a>
+  <a href="#ours">Our additions</a>
   <a href="#bigpicture">Big picture</a>
 </nav>
 
 <main>
 
 <header class="hero">
-  <div class="kicker">Branch &amp; Price &amp; Cut, visually</div>
-  <h1>How do you optimize over a trillion variables you never write down?</h1>
+  <div class="kicker">The ACSP visual guide</div>
+  <h1>First the money.<br>Then the math.</h1>
   <p class="lede">
-    This is a visual guide to the algorithm inside this repository — an adaptation of
-    Derigs&nbsp;&amp;&nbsp;Friederichs (2013) — which plans a cargo airline's entire week:
-    which flights exist, which aircraft flies each one, how the fleet rotates, and which
-    shipment rides which itinerary. One model, solved together. Scroll; each idea builds
-    on the previous one.
+    A tour in two acts. <strong>Act I</strong> is the business problem: every cargo airline
+    makes four planning decisions in silos, and money leaks at each hand-off — we'll show the
+    leak, no math required. <strong>Act II</strong> is the machine that closes it: the exact
+    branch-and-price-and-cut algorithm of Derigs&nbsp;&amp;&nbsp;Friederichs (2013), plus the
+    layers <em>this repository</em> built on top — an autonomous design loop and the
+    partitioning tricks that stretch it to planet scale. (Every airline, cost and demand
+    figure here is fictional, estimated by AI for plausibility.)
   </p>
 </header>
 
-<!-- ============================================================ 1. PROBLEM -->
-<section id="problem">
-  <h2><span class="secnum">1</span>The problem: four decisions, one week</h2>
+<div class="actmark">Act I · The business problem</div>
+
+<!-- ============================================================ 1. VALUE -->
+<section id="value">
+  <h2><span class="secnum">1</span>Four departments, one leaky pipeline</h2>
   <p>
-    A cargo airline's week is periodic: 10,080 minutes that wrap around from Sunday night
-    back to Monday morning. Inside that loop, the airline must choose <strong>flights</strong>
-    (some mandatory, some optional candidates), assign a <strong>fleet type</strong> to each,
-    chain flights into <strong>rotations</strong> each physical aircraft can fly — visiting a
-    maintenance base often enough — and route <strong>cargo</strong> from origins to
-    destinations before deadlines, connecting through hubs.
+    A cargo airline sells exactly one product: <strong>a promise</strong> — <em>your freight,
+    picked up here, delivered there, by Thursday.</em> Behind that promise sit four decisions,
+    and in almost every airline they are made by four different teams, one after another, each
+    treating the previous team's answer as fixed:
   </p>
+  <div class="cards">
+    <div class="card"><h4>1 · Network planning</h4><p>Which flights should exist next season?</p></div>
+    <div class="card"><h4>2 · Fleet planning</h4><p>Which aircraft type flies each one?</p></div>
+    <div class="card"><h4>3 · Operations</h4><p>Can our actual tails chain those flights — and still make maintenance?</p></div>
+    <div class="card"><h4>4 · Revenue management</h4><p>Which shipments do we accept, and how do they route?</p></div>
+  </div>
   <p>
-    Everything happens on one canvas: the <strong>time-space network</strong>. Airports are
-    horizontal lanes, time flows to the right, flights are diagonal arcs, and waiting on the
-    ground is a horizontal arc. Both aircraft and cargo live on this canvas — that's what
-    lets one model decide everything at once.
+    The problem is that these decisions are <strong>one decision</strong> wearing four hats. A
+    flight is only worth flying if the right aircraft can reach it <em>and</em> there is cargo
+    to fill it — but the team deciding the flight doesn't see the cargo, and the team seeing
+    the cargo can no longer change the flight. Here is the smallest possible example of the
+    money that falls through that crack. Press the button:
+  </p>
+
+  <div class="figure">
+    <div class="toggle-wrap">
+      <button id="siloBtn" class="on">Planning in silos — press to plan together</button>
+    </div>
+    <div class="fig-body">
+      <svg id="siloSvg" viewBox="0 0 820 300" width="820" role="img" aria-label="Silo planning versus integrated planning on a three-airport example">
+        <defs>
+          <marker id="arrSilo" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0L10 5L0 10z" fill="var(--path)"/>
+          </marker>
+        </defs>
+        <!-- airports -->
+        <g font-size="13.5" font-weight="700" fill="var(--ink)">
+          <circle cx="110" cy="220" r="9" fill="var(--accent)"/>
+          <text x="96" y="253">Nairobi</text>
+          <circle cx="410" cy="110" r="12" fill="var(--accent)"/>
+          <text x="378" y="86">Hub · Dubai</text>
+          <circle cx="720" cy="220" r="9" fill="var(--accent)"/>
+          <text x="690" y="253">Chicago</text>
+        </g>
+        <!-- trunk flight (always exists) -->
+        <path id="siloTrunk" d="M424 118 Q 570 130 708 214" fill="none" stroke="var(--path)" stroke-width="3" class="flow" marker-end="url(#arrSilo)"/>
+        <text x="560" y="128" font-size="12" font-weight="700" fill="var(--path)">trunk flight · 100 t capacity</text>
+        <!-- feeder: rejected (silo) -->
+        <g id="siloFeederNo" data-anim>
+          <path d="M124 214 Q 250 140 396 116" fill="none" stroke="var(--cut)" stroke-width="2.2" stroke-dasharray="6 5"/>
+          <text x="170" y="150" font-size="12.5" font-weight="700" fill="var(--cut)">✕ feeder rejected by network team:</text>
+          <text x="170" y="167" font-size="12" fill="var(--cut)">"only 8 t of Nairobi→Dubai demand — can't cover its cost"</text>
+        </g>
+        <!-- feeder: flying (integrated) -->
+        <g id="siloFeederYes" data-anim style="opacity:0">
+          <path d="M124 214 Q 250 140 396 116" fill="none" stroke="var(--path)" stroke-width="3" class="flow" marker-end="url(#arrSilo)"/>
+          <text x="150" y="150" font-size="12.5" font-weight="700" fill="var(--path)">✓ feeder flies: 8 t local + 22 t connecting</text>
+        </g>
+        <!-- stranded cargo (silo) -->
+        <g id="siloStranded" data-anim>
+          <circle cx="88" cy="196" r="5" fill="var(--muted)"/><circle cx="76" cy="208" r="5" fill="var(--muted)"/><circle cx="88" cy="220" r="5" fill="var(--muted)"/>
+          <text x="30" y="180" font-size="12" font-weight="600" fill="var(--muted)">22 t Nairobi→Chicago</text>
+          <text x="30" y="196" font-size="12" fill="var(--muted)">stranded → competitor</text>
+        </g>
+        <!-- riding cargo (integrated) -->
+        <g id="siloRiding" data-anim style="opacity:0">
+          <circle cx="88" cy="196" r="5" fill="var(--path)"/><circle cx="76" cy="208" r="5" fill="var(--path)"/><circle cx="88" cy="220" r="5" fill="var(--path)"/>
+          <text x="30" y="180" font-size="12" font-weight="700" fill="var(--path)">22 t Nairobi→Chicago</text>
+          <text x="30" y="196" font-size="12" fill="var(--path)">connects over the hub</text>
+        </g>
+        <!-- trunk load + P&L chips -->
+        <g>
+          <rect x="560" y="30" width="230" height="52" rx="12" fill="var(--panel)" stroke="var(--line)"/>
+          <text x="576" y="51" font-size="12" fill="var(--muted)">trunk load</text>
+          <rect x="576" y="58" width="180" height="12" rx="6" fill="var(--code-bg)"/>
+          <rect id="siloLoad" x="576" y="58" width="63" height="12" rx="6" fill="var(--dual)" style="transition: width .7s, fill .7s"/>
+          <text id="siloLoadLbl" x="690" y="51" font-size="12.5" font-weight="700" fill="var(--dual)">35 / 100 t</text>
+        </g>
+        <text id="siloVerdict" x="30" y="292" font-size="13" font-weight="700" fill="var(--cut)">Result: a rejected feeder, a 35%-full trunk, 22 t of revenue lost — three "correct" siloed decisions, one bad outcome.</text>
+      </svg>
+    </div>
+    <figcaption id="siloCap">
+      In silos, the feeder is judged only on its <em>local</em> demand and dies; the trunk then
+      flies underfilled. Planned together, the model sees that the feeder's real job is feeding
+      the trunk — both flights fill, and the promise to the Nairobi customer is kept. Now
+      multiply this crack by 1,250 flights and 9,000 shipments a week.
+    </figcaption>
+  </div>
+
+  <h3>What integration is worth</h3>
+  <p>
+    This tool makes all four decisions as one, then goes further: it <strong>invents the
+    candidate flights itself</strong> and redesigns the network with no human in the loop
+    (that's §9 — our contribution on top of the published science). Measured effect, letting
+    it design three fictional airlines' networks autonomously:
+  </p>
+  <div class="stats">
+    <div class="stat"><span class="num" data-n="240">+0%</span><span class="lbl">weekly profit · regional carrier (82 → 135 flights)</span></div>
+    <div class="stat"><span class="num" data-n="67">+0%</span><span class="lbl">weekly profit · mid-size international carrier</span></div>
+    <div class="stat"><span class="num" data-n="110">+0%</span><span class="lbl">weekly profit · integrator scale, 1,250+ flights, 9,000+ shipments</span></div>
+  </div>
+  <p class="statnote">Fictional airlines; all costs, demands, fleets and hubs AI-estimated. Same aircraft count — the lift comes from better decisions, not more metal.</p>
+  <p>
+    Where does the value come from, in manager terms? <strong>Fuller airplanes</strong> (the
+    same tails carry more paying tonnes), <strong>fewer lost promises</strong> (demand that
+    used to be stranded gets a routing — or a deliberately priced subcontract),
+    <strong>capex avoidance</strong> (the integrator-scale design uses 111 of 148 aircraft —
+    the schedule tells you how many airplanes you actually need), and <strong>planner
+    leverage</strong> (the tool tries 600 candidate flights per design run; no planning
+    department can evaluate that honestly by hand, because every candidate interacts with
+    every other).
+  </p>
+</section>
+
+<div class="actmark">Act II · The machine</div>
+
+<!-- ============================================================ 2. CANVAS -->
+<section id="canvas">
+  <h2><span class="secnum">2</span>One canvas for everything: the time-space network</h2>
+  <p>
+    To decide everything at once, everything must live in one mathematical place. That place
+    is the <strong>time-space network</strong>: airports are horizontal lanes, time flows to
+    the right across a periodic week (10,080 minutes that wrap Sunday→Monday), flights are
+    diagonal arcs, and waiting on the ground is a horizontal arc. Both aircraft and cargo are
+    walks on this canvas — that's what lets one model own all four decisions.
   </p>
 
   <div class="figure">
@@ -240,14 +381,12 @@
             <path d="M0 0L10 5L0 10z" fill="var(--muted)"/>
           </marker>
         </defs>
-        <!-- time axis -->
         <line x1="120" y1="290" x2="800" y2="290" stroke="var(--line)" stroke-width="1.5"/>
         <text x="120" y="312" fill="var(--muted)" font-size="12">Mon</text>
         <text x="290" y="312" fill="var(--muted)" font-size="12">Tue</text>
         <text x="460" y="312" fill="var(--muted)" font-size="12">Wed</text>
         <text x="630" y="312" fill="var(--muted)" font-size="12">Thu</text>
         <text x="770" y="312" fill="var(--muted)" font-size="12">…</text>
-        <!-- airport lanes -->
         <g font-size="13" font-weight="600" fill="var(--ink)">
           <text x="14" y="64">NBO</text><text x="14" y="82" font-size="10.5" font-weight="400" fill="var(--muted)">spoke</text>
           <text x="14" y="134">DXB</text><text x="14" y="152" font-size="10.5" font-weight="400" fill="var(--muted)">hub · sort</text>
@@ -260,12 +399,10 @@
           <line x1="120" y1="200" x2="800" y2="200"/>
           <line x1="120" y1="270" x2="800" y2="270"/>
         </g>
-        <!-- ground arcs (waiting) -->
         <g stroke="var(--muted)" stroke-width="1.6" opacity=".75">
           <line x1="212" y1="130" x2="300" y2="130" marker-end="url(#arrG)"/>
           <line x1="392" y1="200" x2="470" y2="200" marker-end="url(#arrG)"/>
         </g>
-        <!-- cargo path (green) -->
         <g stroke="var(--path)" stroke-width="3" fill="none">
           <line x1="140" y1="60"  x2="210" y2="130" marker-end="url(#arrP)"/>
           <line x1="302" y1="130" x2="390" y2="200" marker-end="url(#arrP)"/>
@@ -274,7 +411,6 @@
         <circle cx="140" cy="60" r="5" fill="var(--path)"/>
         <circle cx="580" cy="270" r="5" fill="var(--path)"/>
         <text x="150" y="46" fill="var(--path)" font-size="12.5" font-weight="600">cargo path: NBO → DXB → LEJ → ORD, before its deadline</text>
-        <!-- aircraft string (purple), including maintenance -->
         <g stroke="var(--string)" stroke-width="2.4" fill="none" stroke-dasharray="7 4">
           <line x1="240" y1="270" x2="330" y2="200" marker-end="url(#arrS)"/>
           <rect x="332" y="188" width="58" height="24" rx="6" fill="var(--soft-string)" stroke="var(--string)" stroke-dasharray="0"/>
@@ -284,7 +420,6 @@
         </g>
         <text x="341" y="204" fill="var(--string)" font-size="10.5" font-weight="700">A-CHECK</text>
         <text x="248" y="248" fill="var(--string)" font-size="12.5" font-weight="600">flight string: one aircraft's week, maintenance included</text>
-        <!-- legend -->
         <g font-size="12" transform="translate(600,30)">
           <line x1="0" y1="0" x2="26" y2="0" stroke="var(--path)" stroke-width="3"/>
           <text x="32" y="4" fill="var(--muted)">cargo itinerary</text>
@@ -299,17 +434,11 @@
       crossing the right edge re-enter on the left.
     </figcaption>
   </div>
-
-  <p>
-    The catch: decisions interact. The green shipment only moves if the purple aircraft (or a
-    colleague) actually operates those flights; the purple rotation only pays off if enough
-    green flows fill it. Optimizing them separately leaves money on the table — so we won't.
-  </p>
 </section>
 
-<!-- ============================================================ 2. COLUMNS -->
+<!-- ============================================================ 3. COLUMNS -->
 <section id="columns">
-  <h2><span class="secnum">2</span>The key idea: variables are <em>stories</em>, not switches</h2>
+  <h2><span class="secnum">3</span>The key idea: variables are <em>stories</em>, not switches</h2>
   <p>
     A naive model would use tiny variables — "does flight 217 exist?", "does shipment 4,182 use
     leg 88?" — and then need thousands of constraints just to keep the tiny decisions coherent
@@ -344,9 +473,9 @@
   </p>
 </section>
 
-<!-- ============================================================ 3. MASTER -->
+<!-- ============================================================ 4. MASTER -->
 <section id="master">
-  <h2><span class="secnum">3</span>The master problem: an LP that arbitrates</h2>
+  <h2><span class="secnum">4</span>The master problem: an LP that arbitrates</h2>
   <p>
     The <strong>Restricted Master Problem</strong> (RMP, in <code>Rmp.cs</code>) is a linear
     program over the columns generated <em>so far</em> ("restricted" = it only knows a tiny,
@@ -361,13 +490,11 @@
     <div class="fig-body">
       <svg viewBox="0 0 820 300" width="820" role="img" aria-label="RMP matrix: columns are paths and strings, rows are constraint families">
         <text x="20" y="28" font-size="13.5" font-weight="700" fill="var(--ink)">The RMP as a matrix — every column is a story, every row a shared resource</text>
-        <!-- column headers -->
         <g font-size="11.5" font-weight="600">
           <text x="245" y="62" fill="var(--path)">paths x₁ … x₉</text>
           <text x="475" y="62" fill="var(--string)">strings y₁ … y₆</text>
           <text x="648" y="62" fill="var(--dual)">duals π</text>
         </g>
-        <!-- path columns -->
         <g fill="var(--soft-path)" stroke="var(--path)" stroke-width="1">
           <rect x="205" y="70" width="20" height="180" rx="4"/><rect x="230" y="70" width="20" height="180" rx="4"/>
           <rect x="255" y="70" width="20" height="180" rx="4"/><rect x="280" y="70" width="20" height="180" rx="4"/>
@@ -375,13 +502,11 @@
           <rect x="355" y="70" width="20" height="180" rx="4"/><rect x="380" y="70" width="20" height="180" rx="4"/>
           <rect x="405" y="70" width="20" height="180" rx="4"/>
         </g>
-        <!-- string columns -->
         <g fill="var(--soft-string)" stroke="var(--string)" stroke-width="1">
           <rect x="445" y="70" width="20" height="180" rx="4"/><rect x="470" y="70" width="20" height="180" rx="4"/>
           <rect x="495" y="70" width="20" height="180" rx="4"/><rect x="520" y="70" width="20" height="180" rx="4"/>
           <rect x="545" y="70" width="20" height="180" rx="4"/><rect x="570" y="70" width="20" height="180" rx="4"/>
         </g>
-        <!-- row labels -->
         <g font-size="12" fill="var(--ink)">
           <text x="20" y="90">cover mandatory flights</text>
           <text x="20" y="122">optional-flight linking</text>
@@ -395,7 +520,6 @@
           <line x1="200" y1="164" x2="600" y2="164"/><line x1="200" y1="196" x2="600" y2="196"/>
           <line x1="200" y1="228" x2="600" y2="228"/>
         </g>
-        <!-- coefficient dots: strings hit cover/fleet rows, paths hit capacity/demand, both hit capacity -->
         <g fill="var(--string)">
           <circle cx="455" cy="85" r="3.5"/><circle cx="505" cy="85" r="3.5"/><circle cx="580" cy="85" r="3.5"/>
           <circle cx="480" cy="117" r="3.5"/><circle cx="530" cy="117" r="3.5"/>
@@ -408,7 +532,6 @@
           <circle cx="215" cy="213" r="3.5"/><circle cx="265" cy="213" r="3.5"/><circle cx="315" cy="213" r="3.5"/><circle cx="365" cy="213" r="3.5"/><circle cx="415" cy="213" r="3.5"/>
           <circle cx="240" cy="243" r="3.5"/><circle cx="340" cy="243" r="3.5"/>
         </g>
-        <!-- duals -->
         <g font-size="11.5" fill="var(--dual)" font-weight="600">
           <text x="640" y="90">π_cover</text>
           <text x="640" y="122">π_link</text>
@@ -437,9 +560,9 @@
   </p>
 </section>
 
-<!-- ============================================================ 4. COLGEN -->
+<!-- ============================================================ 5. COLGEN -->
 <section id="colgen">
-  <h2><span class="secnum">4</span>Column generation: a conversation between an LP and two oracles</h2>
+  <h2><span class="secnum">5</span>Column generation: a conversation between an LP and two oracles</h2>
   <p>
     The RMP only knows a few columns — its optimum is a <em>local</em> truth. Are there better
     stories out there in the un-enumerated universe? To find out, we compute each hypothetical
@@ -454,7 +577,7 @@ if no such column exists anywhere             →  the LP optimum is PROVEN over
   <p>
     Finding the best hypothetical column is the <strong>pricing problem</strong> — and here's the
     magic: it's a <em>shortest-path problem</em> on the time-space network, solvable without
-    enumerating anything (§5). The loop below is the beating heart of the whole system. Step
+    enumerating anything (§6). The loop below is the beating heart of the whole system. Step
     through it:
   </p>
 
@@ -474,7 +597,6 @@ if no such column exists anywhere             →  the LP optimum is PROVEN over
             <path d="M0 0L10 5L0 10z" fill="var(--accent)"/>
           </marker>
         </defs>
-        <!-- RMP box -->
         <g id="cgRmp">
           <rect x="40" y="60" width="220" height="130" rx="16" fill="var(--soft-accent)" stroke="var(--accent)" stroke-width="2"/>
           <text x="150" y="95" text-anchor="middle" font-size="16" font-weight="700" fill="var(--accent)">RMP (LP)</text>
@@ -482,7 +604,6 @@ if no such column exists anywhere             →  the LP optimum is PROVEN over
           <text x="150" y="136" text-anchor="middle" font-size="12.5" fill="var(--ink)">columns known so far</text>
           <text id="cgLpVal" x="150" y="168" text-anchor="middle" font-size="15" font-weight="700" fill="var(--ink)">z = —</text>
         </g>
-        <!-- pricers -->
         <g id="cgPP">
           <rect x="540" y="30" width="240" height="82" rx="16" fill="var(--soft-path)" stroke="var(--path)" stroke-width="2"/>
           <text x="660" y="60" text-anchor="middle" font-size="15" font-weight="700" fill="var(--path)">PRICE-P · paths</text>
@@ -495,7 +616,6 @@ if no such column exists anywhere             →  the LP optimum is PROVEN over
           <text x="660" y="192" text-anchor="middle" font-size="12" fill="var(--ink)">best work-week per fleet</text>
           <text id="cgPSrc" x="660" y="210" text-anchor="middle" font-size="12.5" font-weight="700" fill="var(--string)"> </text>
         </g>
-        <!-- arrows -->
         <g id="cgArrDuals" opacity=".25">
           <path d="M262 100 C 380 70, 430 70, 536 70" fill="none" stroke="var(--dual)" stroke-width="2.6" marker-end="url(#arrA)"/>
           <path d="M262 150 C 380 180, 430 180, 536 180" fill="none" stroke="var(--dual)" stroke-width="2.6" marker-end="url(#arrA)"/>
@@ -521,9 +641,9 @@ if no such column exists anywhere             →  the LP optimum is PROVEN over
   </p>
 </section>
 
-<!-- ============================================================ 5. PRICING -->
+<!-- ============================================================ 6. PRICING -->
 <section id="pricing">
-  <h2><span class="secnum">5</span>Pricing: shortest paths through a priced world</h2>
+  <h2><span class="secnum">6</span>Pricing: shortest paths through a priced world</h2>
 
   <h3>PRICE-P — cargo paths <span class="tag path">A* + resources</span></h3>
   <p>
@@ -550,7 +670,6 @@ if no such column exists anywhere             →  the LP optimum is PROVEN over
         <g stroke="var(--line)" stroke-dasharray="3 5">
           <line x1="70" y1="50" x2="800" y2="50"/><line x1="70" y1="115" x2="800" y2="115"/><line x1="70" y1="180" x2="800" y2="180"/>
         </g>
-        <!-- candidate legs with tolls -->
         <g stroke="var(--muted)" stroke-width="2" opacity=".5" fill="none">
           <line x1="110" y1="50" x2="240" y2="115"/>
           <line x1="300" y1="115" x2="520" y2="180"/>
@@ -559,14 +678,12 @@ if no such column exists anywhere             →  the LP optimum is PROVEN over
           <line x1="180" y1="50" x2="330" y2="115" marker-end="url(#arrPP)"/>
           <line x1="380" y1="115" x2="620" y2="180" marker-end="url(#arrPP)"/>
         </g>
-        <!-- toll tags -->
         <g font-size="11.5" font-weight="700">
           <text x="130" y="78" fill="var(--muted)">π=$95/t</text>
           <text x="255" y="70" fill="var(--path)">π=$40/t</text>
           <text x="360" y="160" fill="var(--muted)">π=$210/t</text>
           <text x="510" y="138" fill="var(--path)">π=$120/t</text>
         </g>
-        <!-- deadline -->
         <line x1="700" y1="30" x2="700" y2="200" stroke="var(--cut)" stroke-width="2" stroke-dasharray="6 4"/>
         <text x="708" y="42" fill="var(--cut)" font-size="11.5" font-weight="700">deadline</text>
         <circle cx="180" cy="50" r="5" fill="var(--path)"/><circle cx="620" cy="180" r="5" fill="var(--path)"/>
@@ -594,20 +711,20 @@ if no such column exists anywhere             →  the LP optimum is PROVEN over
     This label limit is the algorithm's one honest approximation: <strong>without</strong>
     maintenance the string pricer is exact and so is the whole method; <strong>with</strong>
     maintenance, a provably-best string can occasionally be pruned — the same trade the paper
-    makes (§9).
+    makes (§9 of the paper).
   </p>
 </section>
 
-<!-- ============================================================ 6. CUTS -->
+<!-- ============================================================ 7. CUTS -->
 <section id="cuts">
-  <h2><span class="secnum">6</span>Cuts: closing the fractional loophole</h2>
+  <h2><span class="secnum">7</span>Cuts: closing the fractional loophole</h2>
   <p>
     LPs love loopholes. The selection variable of an optional flight can sit at
     <span class="mono">x = 0.4</span> — flying "40% of a flight" — and cargo happily books 40% of
     its capacity, revenue with almost no fixed cost. Real airlines can't fly fractional
-    airplanes, so the LP bound is too optimistic. <strong>Implied-bound cuts</strong> (§8) add
-    the missing logic: <em>flow on a flight's legs can't exceed capacity times its selection</em>.
-    Toggle the cut to watch the loophole close:
+    airplanes, so the LP bound is too optimistic. <strong>Implied-bound cuts</strong> (paper §8)
+    add the missing logic: <em>flow on a flight's legs can't exceed capacity times its
+    selection</em>. Toggle the cut to watch the loophole close:
   </p>
 
   <div class="figure">
@@ -616,12 +733,10 @@ if no such column exists anywhere             →  the LP optimum is PROVEN over
     </div>
     <div class="fig-body">
       <svg viewBox="0 0 820 240" width="820" role="img" aria-label="Implied bound cut demo">
-        <!-- flight box -->
         <rect x="40" y="60" width="230" height="120" rx="16" fill="var(--panel)" stroke="var(--line)" stroke-width="1.5"/>
         <text x="155" y="92" text-anchor="middle" font-size="14.5" font-weight="700" fill="var(--ink)">optional flight F217</text>
         <text x="155" y="114" text-anchor="middle" font-size="12.5" fill="var(--muted)">capacity 100 t · fixed cost $80k</text>
         <text id="cutSel" x="155" y="150" text-anchor="middle" font-size="17" font-weight="800" fill="var(--cut)">selection x = 0.4</text>
-        <!-- capacity bar -->
         <g>
           <text x="330" y="80" font-size="13" font-weight="600" fill="var(--ink)">cargo booked on F217's leg</text>
           <rect x="330" y="95" width="420" height="34" rx="8" fill="var(--code-bg)" stroke="var(--line)"/>
@@ -643,9 +758,9 @@ if no such column exists anywhere             →  the LP optimum is PROVEN over
   </div>
 </section>
 
-<!-- ============================================================ 7. BRANCHING -->
+<!-- ============================================================ 8. BRANCHING -->
 <section id="branching">
-  <h2><span class="secnum">7</span>Branching: forcing integer answers, without breaking pricing</h2>
+  <h2><span class="secnum">8</span>Branching: forcing integer answers, without breaking pricing</h2>
   <p>
     Cuts tighten, but the LP can still land fractional. Then we <strong>split the world in
     two</strong> and solve both halves — recursively. The art is <em>what</em> to branch on.
@@ -728,29 +843,227 @@ if no such column exists anywhere             →  the LP optimum is PROVEN over
   </div>
 </section>
 
-<!-- ============================================================ 8. BIG PICTURE -->
-<section id="bigpicture">
-  <h2><span class="secnum">8</span>The big picture: three nested loops</h2>
+<div class="actmark">Act III · What this repository adds</div>
+
+<!-- ============================================================ 9. OURS -->
+<section id="ours">
+  <h2><span class="secnum">9</span>Beyond the paper: our contributions</h2>
   <p>
-    Everything above — master, pricing, cuts, branching — is the paper's exact engine. This
-    repository wraps it in two more loops that turn it into a network-design tool. Read the
-    diagram inside-out:
+    Everything in §§2–8 is the published science, implemented faithfully. But the paper's
+    algorithm answers a narrower question than the business needs: it optimizes over a
+    candidate list <em>a human planner wrote</em>, and at industry scale it can run for its
+    whole time budget without producing a single feasible schedule. The layers below are
+    <strong>this repository's own contributions</strong> — they are what turns the exact engine
+    into the network-design results of §1.
+  </p>
+
+  <h3>The autonomous design loop <span class="tag path">OURS</span></h3>
+  <p>
+    The paper assumes a planner supplies the optional flights. We automated the planner:
+    <code>FlightProposer</code> reads each round's solution — which demand had <em>no feasible
+    route at all</em>, which had a route but was crowded out by capacity — ranks the gaps by
+    revenue at risk, and generates candidate flights aimed at them (~80% hub round trips, 15%
+    directs, 5% external charters, all priced from the airline's own cost structure).
+    <code>NetworkDesigner</code> then runs the propose → solve → score → evict cycle until
+    profit flattens. Step through a design run:
+  </p>
+
+  <div class="figure">
+    <div class="stepper">
+      <button class="primary" id="dsNext">Next round ▸</button>
+      <button id="dsReset">↺ Restart</button>
+      <span class="where" id="dsWhere">step 0 / 6</span>
+    </div>
+    <div class="fig-body">
+      <svg viewBox="0 0 820 330" width="820" role="img" aria-label="Autonomous design loop, round by round">
+        <!-- airports: hub + 8 spokes -->
+        <g fill="var(--accent)">
+          <circle cx="410" cy="140" r="11"/>
+          <circle cx="120" cy="60" r="6"/><circle cx="120" cy="215" r="6"/><circle cx="270" cy="262" r="6"/>
+          <circle cx="410" cy="272" r="6"/><circle cx="555" cy="262" r="6"/><circle cx="700" cy="215" r="6"/>
+          <circle cx="700" cy="60" r="6"/><circle cx="270" cy="40" r="6"/>
+        </g>
+        <text x="393" y="122" font-size="12.5" font-weight="700" fill="var(--accent)">HUB</text>
+        <!-- base flights (always on) -->
+        <g stroke="var(--muted)" stroke-width="2.4" fill="none" opacity=".8">
+          <line x1="130" y1="64" x2="398" y2="135"/>
+          <line x1="278" y1="46" x2="402" y2="130"/>
+          <line x1="422" y1="147" x2="692" y2="211"/>
+          <line x1="416" y1="152" x2="548" y2="255"/>
+        </g>
+        <text x="150" y="46" font-size="11.5" font-weight="600" fill="var(--muted)">base schedule (mandatory flights)</text>
+        <!-- round 1 candidates -->
+        <line id="ds_c1" class="cand hidden" x1="128" y1="210" x2="398" y2="146" fill="none"/>
+        <line id="ds_c2" class="cand hidden" x1="422" y1="134" x2="692" y2="66"  fill="none"/>
+        <line id="ds_c3" class="cand hidden" x1="414" y1="152" x2="412" y2="264" fill="none"/>
+        <line id="ds_c4" class="cand hidden" x1="278" y1="257" x2="402" y2="150" fill="none"/>
+        <line id="ds_c5" class="cand hidden" x1="128" y1="218" x2="262" y2="258" fill="none"/>
+        <!-- round 2 candidates -->
+        <line id="ds_d1" class="cand hidden" x1="562" y1="256" x2="694" y2="220" fill="none"/>
+        <line id="ds_d2" class="cand hidden" x1="278" y1="44"  x2="692" y2="60"  fill="none"/>
+        <line id="ds_d3" class="cand hidden" x1="414" y1="152" x2="412" y2="264" fill="none"/>
+        <text id="ds_amn" class="hidden" x="424" y="225" font-size="11" font-weight="700" fill="var(--dual)">amnesty: re-proposed</text>
+        <!-- profit bar -->
+        <g>
+          <text x="90" y="300" font-size="12.5" font-weight="600" fill="var(--ink)">weekly profit</text>
+          <rect x="195" y="289" width="535" height="14" rx="7" fill="var(--code-bg)" stroke="var(--line)"/>
+          <rect id="dsBar" x="195" y="289" width="240" height="14" rx="7" fill="var(--path)"/>
+          <text id="dsProfit" x="740" y="301" font-size="13.5" font-weight="800" fill="var(--path)">$44.8M</text>
+        </g>
+        <text id="dsRound" x="620" y="40" font-size="13" font-weight="800" fill="var(--ink)">round 0 · baseline</text>
+      </svg>
+    </div>
+    <div class="narr" id="dsNarr"><b class="phase">Round 0 — solve what you already fly.</b> The base schedule (mandatory flights only) is solved to a baseline: <b>$44.8M</b>/week, and — just as important — a list of every O&amp;D the solution left on the ground. That list is the fuel for round 1. <i>(Trajectory illustrative of the integrator-scale GI-I run; fictional data.)</i></div>
+  </div>
+
+  <p>
+    The cross-round machinery is where the engineering lives, and each piece exists because a
+    measured failure demanded it: <strong>column-pool warm starts</strong> (round <em>r</em>
+    re-injects round <em>r−1</em>'s columns, so pricing only works on the new batch — root
+    convergence in ~15–40 iterations instead of ~200), <strong>seeded incumbents</strong>
+    (last round's schedule is feasible as-is in the new model, so a round can never lose
+    money), <strong>eviction with amnesty</strong> (unused candidates leave the model but may
+    be re-proposed later, when the grown network changes their economics), and a
+    <strong>final rescue solve</strong> (every candidate that ever flew gets one joint chance
+    with a longer clock, catching synergies split across batches).
+  </p>
+
+  <h3>Partitioning: how the engine reaches planet scale <span class="tag path">OURS</span></h3>
+  <p>
+    At 29,819 O&amp;Ds (the fictional RLA instance) the exact engine drowns — not in theory,
+    in wall-clock. Two <strong>partitioning techniques</strong> keep it honest while making the
+    problem digestible:
+  </p>
+
+  <div class="figure">
+    <div class="fig-body">
+      <svg viewBox="0 0 820 300" width="820" role="img" aria-label="Two partitioning techniques: O&D consolidation and regional fix-and-optimize">
+        <!-- left: OdConsolidator -->
+        <text x="30" y="34" font-size="14" font-weight="800" fill="var(--ink)">Partition the demand · OdConsolidator</text>
+        <g fill="var(--muted)" opacity=".9">
+          <circle cx="60" cy="80" r="3"/><circle cx="82" cy="64" r="3"/><circle cx="74" cy="98" r="3"/>
+          <circle cx="98" cy="82" r="3"/><circle cx="58" cy="116" r="3"/><circle cx="90" cy="112" r="3"/>
+          <circle cx="70" cy="134" r="3"/><circle cx="102" cy="130" r="3"/>
+        </g>
+        <text x="46" y="165" font-size="11.5" fill="var(--muted)">thousands of ~2 t parcels,</text>
+        <text x="46" y="181" font-size="11.5" fill="var(--muted)">each too small to matter alone</text>
+        <path d="M120 100 C 160 100, 160 100, 196 100" stroke="var(--dual)" stroke-width="2.4" fill="none" marker-end="url(#arrDs)"/>
+        <defs>
+          <marker id="arrDs" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0L10 5L0 10z" fill="var(--dual)"/>
+          </marker>
+        </defs>
+        <circle cx="230" cy="100" r="9" fill="var(--accent)"/>
+        <circle cx="345" cy="100" r="9" fill="var(--accent)"/>
+        <line x1="242" y1="100" x2="332" y2="100" stroke="var(--path)" stroke-width="4"/>
+        <text x="222" y="80" font-size="11" font-weight="700" fill="var(--accent)">hub</text>
+        <text x="337" y="80" font-size="11" font-weight="700" fill="var(--accent)">hub</text>
+        <text x="200" y="132" font-size="11.5" font-weight="600" fill="var(--path)">one hub-to-hub pseudo-O&amp;D</text>
+        <text x="200" y="148" font-size="11.5" fill="var(--muted)">aggregate tonnage still pushes duals</text>
+        <text x="30" y="215" font-size="12" fill="var(--muted)">Design rounds run on the coarse demand;</text>
+        <text x="30" y="232" font-size="12" font-weight="700" fill="var(--ink)">the final solve always runs on the ORIGINAL</text>
+        <text x="30" y="249" font-size="12" font-weight="700" fill="var(--ink)">O&amp;Ds — delivered profits are exact.</text>
+        <!-- divider -->
+        <line x1="420" y1="30" x2="420" y2="270" stroke="var(--line)"/>
+        <!-- right: RegionalOptimizer -->
+        <text x="448" y="34" font-size="14" font-weight="800" fill="var(--ink)">Partition the planet · RegionalOptimizer</text>
+        <rect x="448" y="55" width="150" height="120" rx="12" fill="var(--soft-path)" stroke="var(--path)" stroke-width="2"/>
+        <text x="470" y="80" font-size="11.5" font-weight="700" fill="var(--path)">region A · LIVE</text>
+        <text x="470" y="97" font-size="11" fill="var(--path)">re-optimize flights,</text>
+        <text x="470" y="112" font-size="11" fill="var(--path)">flows, fleet slice</text>
+        <rect x="618" y="55" width="172" height="120" rx="12" fill="var(--panel)" stroke="var(--line)" stroke-width="1.5"/>
+        <text x="638" y="80" font-size="11.5" font-weight="700" fill="var(--muted)">rest of world · FROZEN</text>
+        <text x="638" y="97" font-size="11" fill="var(--muted)">backbone timetable fixed</text>
+        <line x1="598" y1="105" x2="618" y2="105" stroke="var(--dual)" stroke-width="2.6"/>
+        <circle cx="608" cy="105" r="5" fill="var(--dual)"/>
+        <text x="500" y="200" font-size="11.5" font-weight="700" fill="var(--dual)">gateway hubs: cross-border cargo is cut at the gate,</text>
+        <text x="500" y="216" font-size="11.5" fill="var(--muted)">with EXACT connection windows read from the frozen</text>
+        <text x="500" y="232" font-size="11.5" fill="var(--muted)">timetable — a regional win always splices back cleanly.</text>
+        <text x="500" y="258" font-size="11.5" fill="var(--muted)">Then rotate: A live → B live → C live… (fix-and-optimize)</text>
+      </svg>
+    </div>
+    <figcaption>
+      Both partitions follow the same design rule: <strong>approximate where you explore,
+      stay exact where you deliver.</strong> Coarse demand and frozen regions guide the search;
+      every delivered schedule is re-validated on the full, original problem.
+    </figcaption>
+  </div>
+
+  <h3>The rest of our layer, at a glance</h3>
+  <div class="cards">
+    <div class="card">
+      <h4><span class="dot" style="background:var(--path)"></span>Restricted-master MIP heuristic</h4>
+      <p>The paper only finds incumbents when an LP lands integral. At 1,250 flights that can
+      mean 15 minutes and no schedule. We periodically re-solve all generated columns as a MIP:
+      first feasible schedule in ~2–4 min instead of never.</p>
+      <span class="who ours">OURS · price-and-branch, wired into the node loop</span>
+    </div>
+    <div class="card">
+      <h4><span class="dot" style="background:var(--path)"></span>Local-branching adoption</h4>
+      <p>On 29k-O&amp;D models even the restricted MIP chokes. Searching within ≤ k selection
+      flips of the incumbent (Fischetti–Lodi) made the first heuristic improvement this scale
+      ever produced: +$3.8M in one round where the unrestricted heuristic moved $0.</p>
+      <span class="who ours">OURS · tractable "best ≤ k changes" moves</span>
+    </div>
+    <div class="card">
+      <h4><span class="dot" style="background:var(--path)"></span>Deliver-all mode</h4>
+      <p>Integrators promise to deliver <em>everything</em>. Demand rows become equalities and a
+      contracted-delivery column (3× own economics) guarantees completability — the model then
+      minimizes the outsourcing bill. Every intermediate solution is feasible by construction.</p>
+      <span class="who ours">OURS · service commitments, honestly priced</span>
+    </div>
+    <div class="card">
+      <h4><span class="dot" style="background:var(--path)"></span>Farley bound, corrected</h4>
+      <p>Hard per-round deadlines need a valid dual bound mid-convergence. We hit (and fixed) a
+      subtle trap: columns already in the master at their upper bound legitimately price
+      positive. Gaps went from a useless 2,016% to an honest 8.8% on the same run.</p>
+      <span class="who ours">OURS · honest math under a clock</span>
+    </div>
+    <div class="card">
+      <h4><span class="dot" style="background:var(--path)"></span>Independent feasibility audit</h4>
+      <p><code>FeasibilityChecker</code> lives outside the solver and re-validates every
+      constraint on every incumbent. The solver throws rather than emit an infeasible schedule —
+      trust is a feature.</p>
+      <span class="who ours">OURS · plus 118 tests: pricers vs brute force, colgen vs full LP</span>
+    </div>
+    <div class="card">
+      <h4><span class="dot" style="background:var(--path)"></span>Operational realism &amp; engineering</h4>
+      <p>Payload-range curves entering the LP exactly and linearly, night curfews, cargo handling
+      times, editable airline-profile JSONs, an Excel round-trip for planners, dual LP backends
+      (HiGHS / CPLEX, 1.5–3.4× faster), and a live web dashboard.</p>
+      <span class="who ours">OURS · the difference between a solver and a tool</span>
+    </div>
+  </div>
+
+  <p>
+    One more thing we're proud of that <em>didn't</em> work: a "hub waves" candidate class that
+    proposed coordinated feeder→trunk→distribution bundles. Measured on the largest instance it
+    changed nothing — the long tail of 2 t parcels genuinely doesn't beat contracted delivery
+    once rotation fixed costs are paid. It stays in the codebase, tested and off by default,
+    with the negative result documented. Honest measurement cuts both ways.
+  </p>
+</section>
+
+<!-- ============================================================ 10. BIG PICTURE -->
+<section id="bigpicture">
+  <h2><span class="secnum">10</span>The big picture: three nested loops</h2>
+  <p>
+    Everything in one frame. Loops 1 and 2 are the paper's exact engine (§§4–8); the primal
+    boosters inside Loop 2 and the whole of Loop 3 are this repository's contributions (§9).
+    Read the diagram inside-out:
   </p>
 
   <div class="figure">
     <div class="fig-body">
       <svg viewBox="0 0 820 470" width="820" role="img" aria-label="Three nested loops: column generation inside branch and bound inside the design loop">
-        <!-- outer ring -->
         <rect x="20" y="20" width="780" height="430" rx="24" fill="none" stroke="var(--dual)" stroke-width="2" stroke-dasharray="10 6"/>
-        <text x="44" y="52" font-size="14.5" font-weight="800" fill="var(--dual)">LOOP 3 · autonomous design (NetworkDesigner)</text>
-        <text x="44" y="72" font-size="12.5" fill="var(--muted)">propose candidate flights at unserved demand → solve → keep what flies, evict what doesn't → repeat until profit flattens</text>
-        <!-- middle ring -->
+        <text x="44" y="52" font-size="14.5" font-weight="800" fill="var(--dual)">LOOP 3 · autonomous design (NetworkDesigner) — OURS</text>
+        <text x="44" y="72" font-size="12.5" fill="var(--muted)">propose candidates at unserved demand → solve → keep what flies, evict the rest → repeat · consolidation + regional partitions at scale</text>
         <rect x="44" y="92" width="732" height="330" rx="20" fill="none" stroke="var(--accent)" stroke-width="2"/>
-        <text x="66" y="122" font-size="14" font-weight="800" fill="var(--accent)">LOOP 2 · branch &amp; bound (BranchAndPrice)</text>
+        <text x="66" y="122" font-size="14" font-weight="800" fill="var(--accent)">LOOP 2 · branch &amp; bound (BranchAndPrice) — the paper</text>
         <text x="66" y="141" font-size="12.5" fill="var(--muted)">DFS tree over flight / fleet / follow-on decisions · prune by bound · every incumbent independently audited</text>
-        <!-- inner ring -->
         <rect x="66" y="158" width="450" height="240" rx="16" fill="var(--soft-accent)" stroke="var(--accent)" stroke-width="1.5"/>
-        <text x="88" y="186" font-size="13.5" font-weight="800" fill="var(--accent)">LOOP 1 · column generation, at every node</text>
+        <text x="88" y="186" font-size="13.5" font-weight="800" fill="var(--accent)">LOOP 1 · column generation, at every node — the paper</text>
         <g font-size="12.5" fill="var(--ink)">
           <text x="88" y="215">RMP LP  →  duals π  →  PRICE-P &amp; PRICE-S  →  new columns</text>
           <text x="88" y="238">…until no column improves  →  separate violated cuts  →  re-loop</text>
@@ -758,12 +1071,11 @@ if no such column exists anywhere             →  the LP optimum is PROVEN over
         </g>
         <line x1="88" y1="278" x2="494" y2="278" stroke="var(--line)"/>
         <g font-size="12.5">
-          <text x="88" y="302" fill="var(--ink)" font-weight="700">Primal boosters (this repo's additions):</text>
+          <text x="88" y="302" fill="var(--ink)" font-weight="700">Primal boosters — OURS (§9):</text>
           <text x="88" y="325" fill="var(--ink)">· restricted-master MIP — recombine all known columns as a MIP</text>
           <text x="88" y="348" fill="var(--ink)">· local branching — best plan within ≤ k flips of the incumbent</text>
           <text x="88" y="371" fill="var(--ink)">· cover constructor — a feasible schedule from second zero</text>
         </g>
-        <!-- side panel: what flows between rings -->
         <g>
           <rect x="540" y="158" width="236" height="240" rx="16" fill="var(--panel)" stroke="var(--line)" stroke-width="1.5"/>
           <text x="558" y="186" font-size="13" font-weight="800" fill="var(--ink)">Between the loops</text>
@@ -783,9 +1095,9 @@ if no such column exists anywhere             →  the LP optimum is PROVEN over
     </div>
     <figcaption>
       Loop 1 answers "what is the best fractional plan, provably?" Loop 2 answers "what is the
-      best <em>integer</em> plan, with an honest gap?" Loop 3 answers the business question:
-      "what network should we fly next season?" — every accepted schedule having survived the
-      independent <code>FeasibilityChecker</code>.
+      best <em>integer</em> plan, with an honest gap?" Loop 3 answers the business question of
+      §1: "what network should we fly next season?" — every accepted schedule having survived
+      the independent <code>FeasibilityChecker</code>.
     </figcaption>
   </div>
 
@@ -810,8 +1122,8 @@ if no such column exists anywhere             →  the LP optimum is PROVEN over
 
   <p style="margin-top:26px">
     That's the whole machine. For the measured numbers — round-by-round design results, the
-    +110% profit lift on the integrator-scale instance, backend benchmarks, and one honest negative result — read
-    <a href="../ALGORITHM.md">ALGORITHM.md</a>. For the code, start at
+    +110% profit lift on the integrator-scale instance, backend benchmarks, and the honest
+    negative result — read <a href="../ALGORITHM.md">ALGORITHM.md</a>. For the code, start at
     <span class="mono">src/Acsp.Solver/BranchAndPrice.cs</span> and follow the components in the
     order of this page.
   </p>
@@ -828,7 +1140,55 @@ if no such column exists anywhere             →  the LP optimum is PROVEN over
 </main>
 
 <script>
-/* ---------- §3 constraint explorer ---------- */
+/* ---------- §1 silo vs integrated toggle ---------- */
+const siloBtn = document.getElementById("siloBtn");
+let integrated = false;
+function siloRender() {
+  const show = (id, on) => { document.getElementById(id).style.opacity = on ? "1" : "0"; };
+  show("siloFeederNo", !integrated); show("siloStranded", !integrated);
+  show("siloFeederYes", integrated); show("siloRiding", integrated);
+  const load = document.getElementById("siloLoad"), lbl = document.getElementById("siloLoadLbl");
+  const verdict = document.getElementById("siloVerdict");
+  if (integrated) {
+    siloBtn.textContent = "Planning together — press to go back to silos";
+    siloBtn.classList.add("fixed");
+    load.setAttribute("width", "137"); load.setAttribute("fill", "var(--path)");
+    lbl.textContent = "76 / 100 t"; lbl.setAttribute("fill", "var(--path)");
+    verdict.textContent = "Result: the feeder pays for itself through connections, the trunk fills, the promise is kept. One decision, made once.";
+    verdict.setAttribute("fill", "var(--path)");
+  } else {
+    siloBtn.textContent = "Planning in silos — press to plan together";
+    siloBtn.classList.remove("fixed");
+    load.setAttribute("width", "63"); load.setAttribute("fill", "var(--dual)");
+    lbl.textContent = "35 / 100 t"; lbl.setAttribute("fill", "var(--dual)");
+    verdict.textContent = "Result: a rejected feeder, a 35%-full trunk, 22 t of revenue lost — three “correct” siloed decisions, one bad outcome.";
+    verdict.setAttribute("fill", "var(--cut)");
+  }
+}
+siloBtn.onclick = () => { integrated = !integrated; siloRender(); };
+siloRender();
+
+/* ---------- §1 count-up stats ---------- */
+const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+function countUp(el) {
+  const target = +el.dataset.n;
+  if (reduceMotion) { el.textContent = "+" + target + "%"; return; }
+  const t0 = performance.now(), dur = 1400;
+  (function tick(t) {
+    const k = Math.min(1, (t - t0) / dur), ease = 1 - Math.pow(1 - k, 3);
+    el.textContent = "+" + Math.round(target * ease) + "%";
+    if (k < 1) requestAnimationFrame(tick);
+  })(t0);
+}
+const nums = document.querySelectorAll(".stat .num");
+if ("IntersectionObserver" in window) {
+  const io = new IntersectionObserver(es => es.forEach(e => {
+    if (e.isIntersecting) { countUp(e.target); io.unobserve(e.target); }
+  }), { threshold: .6 });
+  nums.forEach(n => io.observe(n));
+} else nums.forEach(countUp);
+
+/* ---------- §4 constraint explorer ---------- */
 const ROWS = [
   { id: "(14)–(15)", name: "Cover & selection — every mandatory flight is flown; optional flights only if selected",
     body: "Each <b>mandatory</b> flight must be covered by exactly one selected flight string — the schedule the airline already promised is non-negotiable. Each <b>optional</b> candidate flight gets a binary selection variable <code>x_f</code>, and a string may only cover it when <code>x_f = 1</code>. This is the flight-selection decision: the model literally chooses which candidate flights come into existence, paying their fixed cost through the strings that fly them." },
@@ -841,7 +1201,7 @@ const ROWS = [
   { id: "(21)–(22)", name: "Demand — ship at most what customers tendered (or exactly, in deliver-all)",
     body: "Per O&D: tonnes over all its paths ≤ demand. Its dual is the marginal value of that customer's next tonne — PRICE-P subtracts it when hunting for improving itineraries. In <b>deliver-all</b> mode the row becomes an equality and an always-available contracted-delivery column (priced at 3× own economics) guarantees completability: revenue becomes constant and the model minimizes the outsourcing bill instead." },
   { id: "cuts §8", name: "Implied-bound cuts — added on the fly when violated",
-    body: "Not part of the original formulation — separated during the solve whenever the fractional loophole of §6 opens: <code>flow on flight f's legs ≤ capacity · x_f</code>. Each cut adds a row (and a dual π_cut that both pricers respect), tightening the LP bound toward integer reality. See §6 for the interactive version." },
+    body: "Not part of the original formulation — separated during the solve whenever the fractional loophole of §7 opens: <code>flow on flight f's legs ≤ capacity · x_f</code>. Each cut adds a row (and a dual π_cut that both pricers respect), tightening the LP bound toward integer reality. See §7 for the interactive version." },
 ];
 const rowbtns = document.getElementById("rowbtns");
 const rowdetail = document.getElementById("rowdetail");
@@ -858,7 +1218,7 @@ ROWS.forEach((r, i) => {
   if (i === 3) b.click();           // start on the coupling row — the most interesting one
 });
 
-/* ---------- §4 column generation stepper ---------- */
+/* ---------- §5 column generation stepper ---------- */
 const cgSteps = [
   { z: "z = $1.02M", pp: " ", ps: " ", duals: 0, cols: 0,
     n: "<b class='phase'>Iteration 1 — solve the RMP.</b> The master starts nearly empty: a constructive cover of the mandatory flights (CoverConstructor) and trivial columns. The LP picks the best plan it can see: <b>$1.02M</b>. Almost certainly terrible — it only knows a handful of stories." },
@@ -875,7 +1235,7 @@ const cgSteps = [
   { z: "z = $1.66M", pp: "best rc ≤ 0 — nothing found", ps: "best rc ≤ 0 — nothing found", duals: 1, cols: 0,
     n: "<b class='phase'>Convergence.</b> Both oracles certify: <b>no path and no string in the entire universe has positive reduced cost</b>. The LP optimum $1.66M is proven over all columns that exist — including the trillions never written down." },
   { z: "z* = $1.66M ✓", pp: " ", ps: " ", duals: 0, cols: 0,
-    n: "<b class='phase'>What we hold.</b> A true upper bound for branch-and-bound (§7) — and if the clock had expired mid-loop, the <b>Farley bound</b> (z ≤ z_RMP + Σ d·rc⁺ + Σ n·rc⁺ over <i>missing</i> columns) would still have been a valid certificate. Honest math under a deadline." },
+    n: "<b class='phase'>What we hold.</b> A true upper bound for branch-and-bound (§8) — and if the clock had expired mid-loop, the <b>Farley bound</b> (z ≤ z_RMP + Σ d·rc⁺ + Σ n·rc⁺ over <i>missing</i> columns) would still have been a valid certificate. Honest math under a deadline." },
 ];
 let cgI = -1;
 const cgNext = document.getElementById("cgNext"), cgReset = document.getElementById("cgReset");
@@ -895,7 +1255,7 @@ function cgRender() {
 cgNext.onclick = () => { if (cgI < cgSteps.length - 1) { cgI++; cgRender(); } };
 cgReset.onclick = () => { cgI = 0; cgRender(); };
 
-/* ---------- §6 cut toggle ---------- */
+/* ---------- §7 cut toggle ---------- */
 const cutBtn = document.getElementById("cutBtn");
 let cutOn = false;
 function cutRender() {
@@ -930,6 +1290,45 @@ function cutRender() {
 }
 cutBtn.onclick = () => { cutOn = !cutOn; cutRender(); };
 cutRender();
+
+/* ---------- §9 design-loop stepper ---------- */
+const R1 = ["ds_c1","ds_c2","ds_c3","ds_c4","ds_c5"];
+const R2 = ["ds_d1","ds_d2","ds_d3"];
+const dsSteps = [
+  { arcs: {}, amn: false, bar: 240, profit: "$44.8M", round: "round 0 · baseline",
+    n: "<b class='phase'>Round 0 — solve what you already fly.</b> The base schedule (mandatory flights only) is solved to a baseline: <b>$44.8M</b>/week, and — just as important — a list of every O&D the solution left on the ground. That list is the fuel for round 1. <i>(Trajectory illustrative of the integrator-scale GI-I run; fictional data.)</i>" },
+  { arcs: { ds_c1:"cand", ds_c2:"cand", ds_c3:"cand", ds_c4:"cand", ds_c5:"cand" }, amn: false, bar: 240, profit: "$44.8M", round: "round 1 · propose",
+    n: "<b class='phase'>Round 1 — the FlightProposer aims at the gaps.</b> Unrouted and crowded-out demand is ranked by revenue at risk; a batch of candidates appears (dashed): hub round trips timed to the target demand's connections, a direct where a pair alone fills half an airplane, an external charter as last resort. All priced from the airline's own cost structure." },
+  { arcs: { ds_c1:"adopted", ds_c2:"adopted", ds_c4:"adopted", ds_c3:"evicted", ds_c5:"evicted" }, amn: false, bar: 372, profit: "$68.2M", round: "round 1 · adopt / evict",
+    n: "<b class='phase'>Solve, score, evict.</b> The extended instance is solved (full B&P&C + boosters, time-boxed) with round 0's columns <b>warm-starting</b> pricing and round 0's schedule as a <b>seeded incumbent</b> — a round can never lose money. Three candidates fly (solid green) and stay; two never made it into a rotation and are <b>evicted</b>, keeping the model bounded." },
+  { arcs: { ds_c1:"adopted", ds_c2:"adopted", ds_c4:"adopted", ds_c3:"evicted", ds_c5:"evicted", ds_d1:"cand", ds_d2:"cand", ds_d3:"cand" }, amn: true, bar: 372, profit: "$68.2M", round: "round 2 · propose",
+    n: "<b class='phase'>Round 2 — the network context has changed.</b> New flights created new connection opportunities, so the proposer re-reads the gaps and serves a fresh batch — including an <b>amnesty</b> re-proposal of an evicted candidate whose economics the grown network may have changed. Dedup keys persist across rounds: nothing is ever proposed twice identically." },
+  { arcs: { ds_c1:"adopted", ds_c2:"adopted", ds_c4:"adopted", ds_c3:"evicted", ds_c5:"evicted", ds_d1:"adopted", ds_d3:"adopted", ds_d2:"evicted" }, amn: false, bar: 480, profit: "$88.1M", round: "rounds 2–5 · iterate",
+    n: "<b class='phase'>Iterate until flat.</b> The amnesty candidate flies this time — vindicated by the new network. Rounds continue while profit improves; the stop rule waits for <b>3 consecutive flat rounds</b>, because with rotating batches one flat round doesn't mean the candidate space is exhausted." },
+  { arcs: { ds_c1:"adopted", ds_c2:"adopted", ds_c4:"adopted", ds_c3:"evicted", ds_c5:"evicted", ds_d1:"adopted", ds_d3:"adopted", ds_d2:"evicted" }, amn: false, bar: 512, profit: "$94.0M", round: "final rescue · +110%",
+    n: "<b class='phase'>Final rescue solve.</b> Base + <em>every candidate that ever flew</em> (including later-evicted ones) gets one joint solve with a longer clock — the one chance for synergies that were split across batches. Final design: <b>$94.0M/week, +110% over the baseline</b>, same fleet, 258 of 600 tried candidates adopted. No human touched the candidate list." },
+];
+let dsI = 0;
+const dsNext = document.getElementById("dsNext"), dsReset = document.getElementById("dsReset");
+const dsNarr = document.getElementById("dsNarr"), dsWhere = document.getElementById("dsWhere");
+function dsRender() {
+  const s = dsSteps[dsI];
+  [...R1, ...R2].forEach(id => {
+    const el = document.getElementById(id);
+    el.setAttribute("class", s.arcs[id] || "cand hidden");
+  });
+  document.getElementById("ds_amn").setAttribute("class", s.amn ? "" : "hidden");
+  document.getElementById("dsBar").setAttribute("width", s.bar);
+  document.getElementById("dsProfit").textContent = s.profit;
+  document.getElementById("dsRound").textContent = s.round;
+  dsNarr.innerHTML = s.n;
+  dsNarr.classList.remove("flash"); void dsNarr.offsetWidth; dsNarr.classList.add("flash");
+  dsWhere.textContent = `step ${dsI + 1} / ${dsSteps.length}`;
+  dsNext.disabled = dsI >= dsSteps.length - 1;
+}
+dsNext.onclick = () => { if (dsI < dsSteps.length - 1) { dsI++; dsRender(); } };
+dsReset.onclick = () => { dsI = 0; dsRender(); };
+dsRender();
 </script>
 </body>
 </html>
