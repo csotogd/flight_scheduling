@@ -93,15 +93,26 @@ app.MapPost("/api/design", (DesignRequest req, SolveJobManager jobs, UploadStore
 });
 
 // raw model input for the instance-inspection screen
+// Environment / solver configuration, shown in the UI before a run.
+app.MapGet("/api/config", () => Results.Json(new
+{
+    lpBackend = Acsp.Solver.Lp.LpSolverFactory.DefaultBackendName,
+    dotnet = Environment.Version.ToString(),
+}));
+
 app.MapGet("/api/instance", (string? airline, int? set, int? seed, string? uploadId,
     UploadStore uploads) =>
 {
     var inst = uploads.Get(uploadId)
         ?? Acsp.Data.InstanceGenerator.Generate(airline ?? "RC", set ?? 1, seed ?? 1);
+    static string? Curfew(Acsp.Core.Airport a) => a.CurfewStart < 0 ? null :
+        $"{a.CurfewStart / 60:00}:{a.CurfewStart % 60:00}–{a.CurfewEnd / 60:00}:{a.CurfewEnd % 60:00}";
     return Results.Json(new
     {
         name = inst.Name,
         periodMinutes = inst.Period.N,
+        deliverAll = inst.DeliverAll,
+        cargoHandlingMinutes = inst.CargoHandlingMinutes,
         summary = new
         {
             airports = inst.Airports.Length,
@@ -122,6 +133,7 @@ app.MapGet("/api/instance", (string? airline, int? set, int? seed, string? uploa
             minTransferMin = a.MinTransferTime,
             transferCostPerT = a.TransferCostPerTonne,
             storagePerTHour = a.StorageCostPerTonneHour,
+            curfew = Curfew(a),
         }),
         fleets = inst.Fleets.Select(k => new
         {
@@ -134,6 +146,9 @@ app.MapGet("/api/instance", (string? airline, int? set, int? seed, string? uploa
             mntFlightH = Math.Round(k.MaxFlightMinutesBetweenMaintenance / 60.0, 1),
             mntElapsedDays = Math.Round(k.MaxElapsedMinutesBetweenMaintenance / 1440.0, 1),
             mntDurationH = Math.Round(k.MaintenanceDuration / 60.0, 1),
+            rangeMaxKm = k.RangeMaxKm,
+            payloadAtMaxRangeT = k.RangeMaxKm > 0
+                ? (k.PayloadAtMaxRangeT > 0 ? k.PayloadAtMaxRangeT : k.MaxWeight / 2) : (double?)null,
         }),
         flights = inst.Flights.Select(f => new
         {

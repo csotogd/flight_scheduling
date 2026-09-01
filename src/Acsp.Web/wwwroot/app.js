@@ -24,8 +24,17 @@ async function init() {
     o.value = a.code; o.textContent = `${a.code} — ${a.name}`;
     $("airline").appendChild(o);
   }
-  $("solveBtn").onclick = startSolve;
-  $("designBtn").onclick = startDesign;
+  $("solveBtn").onclick = () => requestRun("solve");
+  $("designBtn").onclick = () => requestRun("design");
+  $("reviewCancel").onclick = closeReview;
+  $("reviewOverlay").onclick = e => { if (e.target === $("reviewOverlay")) closeReview(); };
+  $("printBtn").onclick = () => window.print();
+  fetch("/api/config").then(r => r.json()).then(c => {
+    CONFIG = c;
+    $("configLine").innerHTML =
+      `Environment: LP backend <b>${c.lpBackend.toUpperCase()}</b> · .NET ${c.dotnet}` +
+      ` · override with <code>ACSP_LP_BACKEND=highs|cplex</code>`;
+  }).catch(() => {});
   $("cancelBtn").onclick = () => currentJob && fetch(`/api/jobs/${currentJob}/cancel`, { method: "POST" });
   $("proposeBtn").onclick = proposeAndResolve;
   $("inputBtn").onclick = showInput;
@@ -51,6 +60,12 @@ async function init() {
   document.querySelectorAll("#wsTabs button").forEach(b => b.onclick = () => setWs(b.dataset.ws));
   setWs(localStorage.getItem("acspWs") || "planner");
   refreshSaved();
+  // a reload should not orphan a running optimization: re-attach to it
+  try {
+    const jobs = await (await fetch("/api/jobs")).json();
+    const running = jobs.find(j => j.status === "running");
+    if (running) followJob(running);
+  } catch {}
 }
 
 /* Workspace tabs: Planner / OR Engineer / Data. Panels carry ws-p / ws-e / ws-d classes;
@@ -68,6 +83,90 @@ function chip(state, text) {
   c.className = "chip " + state;
   $("jobChipText").textContent = text;
 }
+
+/* ------------------------------------------------- pre-run review & sanity checks */
+let CONFIG = null;
+let instCache = { key: null, data: null };
+
+async function fetchInstanceSummary() {
+  const req = formRequest();
+  const key = upload ? "u:" + upload.uploadId : `${req.airline}|${req.set}|${req.seed}`;
+  if (instCache.key === key) return instCache.data;
+  const d = await (await fetch(upload
+    ? `/api/instance?uploadId=${upload.uploadId}`
+    : `/api/instance?airline=${req.airline}&set=${req.set}&seed=${req.seed}`)).json();
+  instCache = { key, data: d };
+  return d;
+}
+
+/* Open the review modal (unless the user opted out), then run. */
+async function requestRun(mode) {
+  if (localStorage.getItem("acspSkipReview") === "1") {
+    return mode === "solve" ? startSolve() : startDesign();
+  }
+  const btn = mode === "solve" ? $("solveBtn") : $("designBtn");
+  btn.disabled = true;
+  let d;
+  try { d = await fetchInstanceSummary(); }
+  catch { btn.disabled = false; return mode === "solve" ? startSolve() : startDesign(); }
+  btn.disabled = false;
+
+  const s = d.summary, req = formRequest();
+  $("reviewTitle").textContent = mode === "solve"
+    ? `Review — solve ${d.name}` : `Review — auto-design from ${d.name}`;
+  const cells = [
+    ["Airports", `${s.airports} (${s.hubs} hubs)`],
+    ["Aircraft", `${s.aircraft} · ${s.fleets} fleets`],
+    ["Flights", `${s.mandatory} mand + ${s.optional} opt`],
+    ["O&Ds", s.ods],
+    ["Demand", fmt1(s.demandT) + " t"],
+    ["Handling", (d.cargoHandlingMinutes ?? 0) + " min"],
+  ];
+  $("reviewSummary").innerHTML = cells.map(([l, v]) =>
+    `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div></div>`).join("");
+
+  const checks = [];
+  const add = (lvl, txt) => checks.push([lvl, txt]);
+  if (s.aircraft === 0) add("error", "No aircraft in the instance — nothing can fly.");
+  if (s.demandT === 0) add("error", "No demand — the optimum is to fly nothing.");
+  const flights = s.mandatory + s.optional;
+  const minBudget = Math.max(20, Math.round(flights / 12));
+  if (req.timeLimitSeconds < minBudget)
+    add("warn", `Time limit ${req.timeLimitSeconds}s may be too small for a first feasible schedule ` +
+      `at this size — rule of thumb: at least ~${minBudget}s (flights ÷ 12).`);
+  else add("ok", `Time budget ${req.timeLimitSeconds}s is reasonable for ${flights} flights.`);
+  if (req.maintenance && flights > 800)
+    add("warn", "Maintenance on a large instance: string pricing becomes approximate and slower (σ label limit).");
+  if (mode === "solve" && s.optional === 0)
+    add("info", "No optional flights: this is pure fleet assignment + rotations + cargo routing (no flight selection).");
+  if (mode === "design") {
+    const batch = +$("designBatch").value;
+    if (batch > 400)
+      add("warn", `Batch ${batch} exceeds what the restricted-master MIP typically digests (~300–400) — flat rounds likely. ` +
+        "Rule of thumb: ~20–25% of the base cargo flights.");
+    else add("ok", `Batch ${batch} within the digestible range; up to ${$("designRounds").value} rounds.`);
+  }
+  if (d.deliverAll)
+    add("info", "Deliver-all commitment: demand rows are equalities; the model minimizes the contracting bill.");
+  const curfews = (d.airports || []).filter(a => a.curfew).length;
+  if (curfews) add("info", `${curfews} airports enforce night curfews (no arrivals in the window).`);
+  $("reviewChecks").innerHTML = checks.map(([lvl, t]) => `<li class="${lvl}">${t}</li>`).join("");
+
+  $("reviewConfig").textContent =
+    `mode=${mode}  time-limit=${req.timeLimitSeconds}s  maintenance=${req.maintenance ? "on" : "off"}` +
+    (mode === "design" ? `  batch=${$("designBatch").value}  rounds=${$("designRounds").value}` : "") +
+    `  gap-target=0.5%  lp-backend=${CONFIG ? CONFIG.lpBackend : "?"}` +
+    (upload ? `  source=Excel:${upload.name}` : "");
+
+  $("reviewRun").onclick = () => {
+    if ($("reviewSkip").checked) localStorage.setItem("acspSkipReview", "1");
+    closeReview();
+    mode === "solve" ? startSolve() : startDesign();
+  };
+  $("reviewOverlay").classList.remove("hidden");
+  $("reviewRun").focus();
+}
+function closeReview() { $("reviewOverlay").classList.add("hidden"); }
 
 async function refreshSaved() {
   const list = await (await fetch("/api/solutions")).json();
@@ -132,19 +231,25 @@ async function showInput() {
       `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div></div>`).join("");
 
     $("inputFleets").innerHTML =
-      "<tr><th>fleet</th><th>a/c</th><th>max t</th><th>max m³</th><th>range km</th>" +
+      "<tr><th>fleet</th><th>a/c</th><th>max t</th><th>max m³</th><th>range km (full)</th>" +
+      "<th>range max km</th><th>payload @ max t</th>" +
       "<th>fixed $/a-c/wk</th><th>ground min</th><th>mnt cycles</th><th>mnt flight h</th>" +
       "<th>mnt elapsed d</th><th>mnt stop h</th></tr>" +
       d.fleets.map(k => `<tr><td>${k.code}</td><td>${k.count}</td><td>${k.maxWeightT}</td>
-        <td>${k.maxVolM3}</td><td>${fmt(k.rangeKm)}</td><td>${fmt(k.fixedPerAircraftWeek)}</td>
+        <td>${k.maxVolM3}</td><td>${fmt(k.rangeKm)}</td>
+        <td>${k.rangeMaxKm ? fmt(k.rangeMaxKm) : "—"}</td>
+        <td>${k.payloadAtMaxRangeT != null ? fmt1(k.payloadAtMaxRangeT) : "—"}</td>
+        <td>${fmt(k.fixedPerAircraftWeek)}</td>
         <td>${k.groundMin}</td><td>${k.mntCycles}</td><td>${k.mntFlightH}</td>
         <td>${k.mntElapsedDays}</td><td>${k.mntDurationH}</td></tr>`).join("");
 
     $("inputAirports").innerHTML =
-      "<tr><th>code</th><th>name</th><th>hub</th><th>min transfer</th><th>transfer $/t</th><th>storage $/t/h</th></tr>" +
+      "<tr><th>code</th><th>name</th><th>hub</th><th>min transfer</th><th>transfer $/t</th>" +
+      "<th>storage $/t/h</th><th>curfew (no arrivals)</th></tr>" +
       d.airports.map(a => `<tr${a.hub ? "" : ' class=""'}><td>${a.code}</td><td>${a.name}</td>
         <td>${a.hub ? "yes" : ""}</td><td>${a.hub ? a.minTransferMin + " min" : "—"}</td>
-        <td>${a.hub ? a.transferCostPerT : "—"}</td><td>${a.hub ? a.storagePerTHour : "—"}</td></tr>`).join("");
+        <td>${a.hub ? a.transferCostPerT : "—"}</td><td>${a.hub ? a.storagePerTHour : "—"}</td>
+        <td>${a.curfew || "open 24h"}</td></tr>`).join("");
 
     const renderFlights = () => {
       const q = $("flightFilter").value.trim().toUpperCase();
@@ -516,6 +621,159 @@ function renderSolution(sol) {
   renderGantt(sol);
   renderOdTable(sol);
   renderFlightTable(sol);
+  renderReport(sol);
+}
+
+/* ------------------------------------------------------------------ report */
+
+function renderReport(sol) {
+  $("reportEmpty").classList.add("hidden");
+  $("reportSection").classList.remove("hidden");
+  const pnl = sol.pnl;
+  const shipped = sol.ods.reduce((a, o) => a + o.shippedT, 0);
+  const demand = sol.ods.reduce((a, o) => a + o.demandT, 0);
+  const served = sol.ods.filter(o => o.shippedT > 1e-6).length;
+  const totalCosts = pnl.variableCosts + pnl.fixedFlightCosts + pnl.aircraftCosts +
+    pnl.externalCosts + (pnl.contractedCosts || 0);
+  const aircraftUsed = sol.rotations.reduce((a, r) => a + r.aircraft, 0);
+  const aircraftOwned = sol.fleets.reduce((a, f) => a + f.count, 0);
+
+  $("reportTitle").textContent = `Weekly network plan — ${sol.instance}`;
+  $("reportMeta").textContent =
+    `${new Date().toISOString().slice(0, 10)} · gap ${pct(sol.stats.gap)} · ` +
+    `${fmt(sol.stats.nodes)} B&B nodes · ${fmt1(sol.stats.seconds)} s · ` +
+    `maintenance ${sol.withMaintenance ? "on" : "off"}` +
+    (CONFIG ? ` · LP ${CONFIG.lpBackend.toUpperCase()}` : "");
+
+  const kpis = [
+    ["Weekly profit", "$" + fmt(pnl.profit), pnl.profit >= 0 ? "pos" : "neg"],
+    ["Revenue", "$" + fmt(pnl.revenue)],
+    ["Total costs", "$" + fmt(totalCosts)],
+    ["Margin", pnl.revenue ? (100 * pnl.profit / pnl.revenue).toFixed(1) + " %" : "—"],
+    ["Demand served", (100 * shipped / demand).toFixed(1) + " %"],
+    ["Tonnes flown", fmt1(shipped) + " t"],
+    ["Aircraft in use", `${aircraftUsed} / ${aircraftOwned}`],
+  ];
+  $("reportKpis").innerHTML = kpis.map(([l, v, cls]) =>
+    `<div class="kpi"><div class="l">${l}</div><div class="v ${cls || ""}">${v}</div></div>`).join("");
+
+  drawWaterfall(pnl);
+  renderFleetUtil(sol);
+  renderServiceTable(sol, shipped, demand, served);
+  renderTopLanes(sol);
+
+  $("designOutcome").innerHTML = "";
+  if (sol.design) {
+    const d = sol.design;
+    const best = d.rounds.find(r => r.round === d.bestRound);
+    const accepted = d.proposals.filter(p => p.status === "accepted").length;
+    $("designOutcome").innerHTML =
+      `<b>Autonomous design outcome.</b> Base schedule $${fmt(d.baseProfit)} → ` +
+      `<b>$${fmt(best.profit)}</b> at round ${d.bestRound} ` +
+      `(<b>${(100 * (best.profit - d.baseProfit) / Math.abs(d.baseProfit)).toFixed(1)} %</b>). ` +
+      `${d.proposals.length} candidate flights evaluated, ${accepted} adopted. ` +
+      `Stop: ${d.stopReason}.`;
+  }
+}
+
+/* P&L waterfall: revenue down through each cost bucket to profit. */
+function drawWaterfall(pnl) {
+  const svg = $("pnlWaterfall");
+  svg.innerHTML = "";
+  const steps = [
+    ["Revenue", pnl.revenue, "in"],
+    ["Variable", -pnl.variableCosts, "out"],
+    ["Flight fixed", -pnl.fixedFlightCosts, "out"],
+    ["Aircraft", -pnl.aircraftCosts, "out"],
+    ...(pnl.externalCosts ? [["External", -pnl.externalCosts, "out"]] : []),
+    ...(pnl.contractedCosts ? [["Contracted", -pnl.contractedCosts, "out"]] : []),
+    ["Profit", pnl.profit, pnl.profit >= 0 ? "net" : "netneg"],
+  ];
+  const W = 860, H = 240, m = { l: 74, r: 10, t: 14, b: 34 };
+  let run = 0, lo = 0, hi = 0;
+  for (const [, v, kind] of steps) {
+    if (kind === "net" || kind === "netneg") continue;
+    run += v; hi = Math.max(hi, run); lo = Math.min(lo, run);
+  }
+  hi = Math.max(hi, pnl.revenue, pnl.profit, 0); lo = Math.min(lo, pnl.profit, 0);
+  const span = hi - lo || 1;
+  const Y = v => m.t + (H - m.t - m.b) * (1 - (v - lo) / span);
+  const bw = (W - m.l - m.r) / steps.length;
+  const colors = { in: "#1f4e8c", out: "#c8a36a", net: "#17805c", netneg: "#c03434" };
+  for (let i = 0; i <= 3; i++) {
+    const v = lo + span * i / 3;
+    svgEl(svg, "line", { x1: m.l, x2: W - m.r, y1: Y(v), y2: Y(v), stroke: "#e2e5ea", "stroke-width": .7 });
+    svgEl(svg, "text", { x: m.l - 6, y: Y(v) + 4, fill: "#647084", "font-size": 10, "text-anchor": "end" }, "$" + fmt(v));
+  }
+  let cum = 0;
+  steps.forEach(([label, v, kind], i) => {
+    const x = m.l + i * bw + bw * 0.14, w = bw * 0.72;
+    let y0, y1;
+    if (kind === "net" || kind === "netneg") { y0 = Y(0); y1 = Y(v); }
+    else { y0 = Y(cum); cum += v; y1 = Y(cum); }
+    const top = Math.min(y0, y1), h = Math.max(2, Math.abs(y1 - y0));
+    svgEl(svg, "rect", { x, y: top, width: w, height: h, rx: 3, fill: colors[kind], opacity: .92 });
+    if (kind === "out" && i < steps.length - 1)
+      svgEl(svg, "line", { x1: x + w, x2: x + bw, y1: Y(cum), y2: Y(cum), stroke: "#b6bcc4", "stroke-dasharray": "3 3" });
+    svgEl(svg, "text", { x: x + w / 2, y: H - 18, fill: "#647084", "font-size": 10.5, "text-anchor": "middle" }, label);
+    svgEl(svg, "text", { x: x + w / 2, y: top - 5, fill: "#16181d", "font-size": 10, "text-anchor": "middle", "font-weight": 600 },
+      (v < 0 ? "−$" : "$") + fmt(Math.abs(v)));
+  });
+}
+
+function renderFleetUtil(sol) {
+  const flightById = Object.fromEntries(sol.flights.map(f => [f.id, f]));
+  const N = sol.periodMinutes;
+  const util = {}; // fleet -> {used, blockMin, legs}
+  for (const f of sol.fleets) util[f.code] = { owned: f.count, used: 0, blockMin: 0, legs: 0 };
+  for (const r of sol.rotations) {
+    const u = util[r.fleet];
+    u.used += r.aircraft;
+    for (const s of r.strings)
+      for (const fid of s.flightIds)
+        for (const l of flightById[fid].legs) {
+          u.blockMin += (l.arr >= l.dep ? l.arr - l.dep : l.arr + N - l.dep);
+          u.legs++;
+        }
+  }
+  $("fleetUtilTable").innerHTML =
+    "<tr><th>fleet</th><th>aircraft used</th><th>legs/wk</th><th>block h/wk</th><th>h per a/c</th><th>utilization</th></tr>" +
+    sol.fleets.map(f => {
+      const u = util[f.code];
+      const perAc = u.used ? u.blockMin / 60 / u.used : 0;
+      const pctU = Math.min(100, 100 * perAc / 168);
+      return `<tr${u.used ? "" : ' class="dim"'}><td>${f.code}</td>
+        <td>${u.used} / ${f.count}</td><td>${u.legs || "—"}</td>
+        <td>${fmt1(u.blockMin / 60)}</td><td>${fmt1(perAc)}</td>
+        <td><span class="bar" style="width:${Math.round(pctU * 0.6)}px"></span> ${pctU.toFixed(0)}%</td></tr>`;
+    }).join("");
+}
+
+function renderServiceTable(sol, shipped, demand, served) {
+  const rows = [
+    ["Demand tendered", fmt1(demand) + " t · " + sol.ods.length + " O&Ds"],
+    ["Flown on own network", fmt1(shipped - (sol.pnl.contractedT || 0)) + " t"],
+    ...(sol.pnl.contractedT > 0
+      ? [["Contracted out", fmt1(sol.pnl.contractedT) + ` t ($${fmt(sol.pnl.contractedCosts)})`]] : []),
+    ["O&Ds served", `${served} / ${sol.ods.length}`],
+    ...(sol.demandAtRisk ? [
+      ["No feasible route at all", `${sol.demandAtRisk.unservableOds} O&Ds · ${fmt1(sol.demandAtRisk.unservableTonnes)} t`],
+      ["No route in this schedule", `${sol.demandAtRisk.notInScheduleOds} O&Ds · ${fmt1(sol.demandAtRisk.notInScheduleTonnes)} t`],
+    ] : []),
+  ];
+  $("serviceTable").innerHTML = rows.map(([l, v]) =>
+    `<tr><td>${l}</td><td>${v}</td></tr>`).join("");
+}
+
+function renderTopLanes(sol) {
+  const ap = Object.fromEntries(sol.airports.map(a => [a.id, a.code]));
+  const top = [...sol.ods].sort((a, b) => b.shippedT - a.shippedT).slice(0, 10);
+  $("topLanesTable").innerHTML =
+    "<tr><th>lane</th><th>demand t</th><th>flown t</th><th>fill</th><th>rate $/t</th><th>revenue $</th></tr>" +
+    top.map(o => `<tr><td>${ap[o.from]} → ${ap[o.to]}</td>
+      <td>${fmt1(o.demandT)}</td><td>${fmt1(o.shippedT)}</td>
+      <td>${o.demandT ? (100 * o.shippedT / o.demandT).toFixed(0) : 0}%</td>
+      <td>${fmt(o.rate)}</td><td>${fmt(o.shippedT * o.rate)}</td></tr>`).join("");
 }
 
 /* Time-space network: airports on the y-axis, the week on the x-axis; every selected leg is a
