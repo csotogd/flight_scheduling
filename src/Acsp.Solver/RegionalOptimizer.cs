@@ -160,14 +160,21 @@ public sealed class RegionalOptimizer
         {
             var degenerate = new HashSet<int>();
             foreach (var (path, _) in incumbent.Flows)
-                foreach (var (s, e) in Runs(path, kept))
-                {
-                    int o = _inst.Legs[path.LegIds[s]].Origin;
-                    int d = _inst.Legs[path.LegIds[e]].Destination;
-                    if (o == d)
-                        for (int i = s; i <= e; i++)
-                            degenerate.Add(_inst.Legs[path.LegIds[i]].FlightId);
-                }
+            {
+                var runs = Runs(path, kept).ToList();
+                // freeze the flights of (a) degenerate cuts (a loop entering and leaving
+                // the region at the same airport) and (b) paths crossing the region MORE
+                // THAN ONCE: v1 splices exactly one regional segment per donated path —
+                // donating two runs of the same flow double-counts its tonnage on merge
+                bool freeze = runs.Count > 1 || runs.Any(r =>
+                    _inst.Legs[path.LegIds[r.Start]].Origin
+                        == _inst.Legs[path.LegIds[r.End]].Destination
+                    && !(r.Start == 0 && r.End == path.LegIds.Length - 1));
+                if (!freeze) continue;
+                foreach (var (s, e) in runs)
+                    for (int i = s; i <= e; i++)
+                        degenerate.Add(_inst.Legs[path.LegIds[i]].FlightId);
+            }
             if (degenerate.Count == 0) break;
             kept.ExceptWith(degenerate);
         }
