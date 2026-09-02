@@ -9,8 +9,12 @@ public sealed record RegionalOptions
     /// <summary>After the single-region passes of each cycle, run PAIRWISE passes over the
     /// region unions with cross-region unserved/contracted demand (the relay: a cross od
     /// enters the pair block WHOLE, with exact windows — feeder, trunk and distribution are
-    /// all re-decidable in one model, no cross-pass bookkeeping or estimates needed).</summary>
-    public bool PairPasses { get; init; } = true;
+    /// all re-decidable in one model, no cross-pass bookkeeping or estimates needed).
+    /// Off by default: on RLA the pairs ran clean but adopted nothing — the third
+    /// independent probe (after hub waves and the round LP-promise log) saying the
+    /// scattered cross-region tail does not beat 3x contracting. Turn on for world-scale
+    /// instances or cheaper recourse.</summary>
+    public bool PairPasses { get; init; }
     /// <summary>Full cycles over the regions (a total time budget can cut them short).</summary>
     public int Cycles { get; init; } = 2;
     /// <summary>Total wall-clock budget in seconds; 0 = unlimited (cycles decide).</summary>
@@ -35,8 +39,8 @@ public sealed record RegionalBlockResult(string Region, int Airports, int Flight
 /// only appear when their frozen feeder has landed — so any regional improvement splices
 /// back into a feasible global schedule by construction, and the global profit can only go
 /// up (a merge is accepted only when the independently verified global profit improves).
-/// v1 scope: polish of an existing schedule. Cross-region demand that is currently
-/// contracted end-to-end is not re-opened (that needs a relay mechanism across passes).
+/// With <see cref="RegionalOptions.PairPasses"/>, cross-region demand is re-opened through
+/// pairwise passes: a cross od enters the union block whole, with exact windows.
 /// </summary>
 public sealed class RegionalOptimizer
 {
@@ -240,7 +244,7 @@ public sealed class RegionalOptimizer
                 net[(st.FleetId, o)] = net.GetValueOrDefault((st.FleetId, o)) + 1;
                 net[(st.FleetId, d)] = net.GetValueOrDefault((st.FleetId, d)) - 1;
             }
-            foreach (var ((fleet, airport), n) in net.Where(kv => kv.Value > 0))
+            foreach (var ((fleet, airport), _) in net.Where(kv => kv.Value > 0))
             {
                 var offender = oneWay.FirstOrDefault(x =>
                     x.S.FleetId == fleet && x.O == airport
@@ -269,9 +273,6 @@ public sealed class RegionalOptimizer
         }
         if (kept.Count == 0 || !kept.Any(f => !_inst.Flights[f].IsExternal)) return null;
 
-        // fleet slice: assemble the FROZEN strings alone and charge their aircraft need;
-        // the remainder is the region's budget. (Charging whole mixed rotations would
-        // double-count the aircraft that the region's own seed strings still need.)
         // fleet slice: the block may use the idle airplanes plus whatever the kept strings
         // themselves consume today — budget = count - used(all) + used(kept side). The kept
         // side assembles by construction after balance repair; if it still fails, skip the
@@ -368,7 +369,6 @@ public sealed class RegionalOptimizer
         var source = new List<(int, CargoPath?, double, int, int)>();
         var seedFlows = new List<(CargoPath, double)>();
         var wholeOd = new Dictionary<int, int>(); // global od -> sub od id
-        var shippedWhole = new double[_inst.Ods.Length];
 
         // the sub-instance runs with handling 0 and the handling ENCODED in the windows
         // (gateway hand-offs must not pay load/unload again, only origin/destination ends)
@@ -419,7 +419,6 @@ public sealed class RegionalOptimizer
                             LegIds = [.. Enumerable.Range(s, e - s + 1)
                                 .Select(i => legMap[path.LegIds[i]])],
                         }, tonnes));
-                        shippedWhole[path.OdId] += tonnes;
                     }
                     continue;
                 }

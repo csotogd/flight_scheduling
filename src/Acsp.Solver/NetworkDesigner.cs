@@ -68,6 +68,8 @@ public sealed record DesignOptions
     /// minutes of cycle where the global continuation gained +0 in 90. Skipped when
     /// maintenance is on (blocks solve without maintenance).</summary>
     public bool RegionalPolish { get; init; }
+    /// <summary>Include cross-region pair passes (the relay) in the regional polish.</summary>
+    public bool RegionalPairs { get; init; }
     public double GapTarget { get; init; } = 0.005;
     public bool WithMaintenance { get; init; }
     public string? LpBackend { get; init; }
@@ -458,6 +460,7 @@ public sealed class NetworkDesigner
                 Cycles = 99, TotalTimeLimitSeconds = _opt.FinalTimeLimitSeconds,
                 GapTarget = _opt.GapTarget, LpBackend = _opt.LpBackend,
                 LocalBranching = _opt.LocalBranching, LocalBranchK = _opt.LocalBranchK,
+                PairPasses = _opt.RegionalPairs,
             });
             ro.Progress += msg => Progress?.Invoke(new DesignProgress(rp, msg, null));
             var swp = System.Diagnostics.Stopwatch.StartNew();

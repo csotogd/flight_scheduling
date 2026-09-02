@@ -106,6 +106,7 @@ static int Design(string[] a)
         LocalBranchK = int.Parse(Opt(a, "lb-k", "60")),
         IncludeWaves = Flag(a, "waves"), // opt-in: measured no-effect on RLA (ALGORITHM.md)
         RegionalPolish = Flag(a, "regional"),
+        RegionalPairs = Flag(a, "regional-pairs"),
     };
     var designer = new NetworkDesigner(inst, opt);
     var lastReport = DateTime.MinValue;
@@ -289,6 +290,7 @@ static int RegionalBench(string[] a)
     var reg = new RegionalOptimizer(inst, new RegionalOptions
     {
         BlockTimeLimitSeconds = blockTime, Cycles = 99, TotalTimeLimitSeconds = armTime,
+        PairPasses = Flag(a, "pairs"),
     });
     reg.Progress += Console.WriteLine;
     var (bestB, pB, blocksLog) = reg.Run(baseRes.Best);

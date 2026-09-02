@@ -212,6 +212,37 @@ everywhere). The fractional promise of rounds 1–2 is composition mirage, not v
 wave shape unlocks: even bundled, the 2t-parcel tail does not beat 3× contracting once
 rotation fixed costs are paid. The class stays implemented, tested and off by default.
 
+### 3.5 Geographic block decomposition ("regional split")
+
+For planet-scale instances the whole-network integer step stops moving entirely (measured:
++0 in two independent 90-minute global continuations on RLA). The regional optimizer
+(`RegionalOptimizer`, UI toggle "regional split", CLI `--regional`) is spatial
+fix-and-optimize: freeze everything outside one hub-cluster region, re-optimize the
+region's flights, flows and fleet slice, and merge back only when the independently
+verified GLOBAL profit improves — the cycle is monotone by construction.
+
+- **Exact gateway windows**: cross-boundary cargo is truncated at its gateway with
+  avail/deadline read from the frozen timetable (feeder arrival + transfer / onward
+  departure − transfer), handling encoded in the windows; a merged splice is
+  time-feasible by construction.
+- **Balance repair**: the re-decidable string set must balance arrivals/departures per
+  (fleet, airport) or neither side assembles into rotations; one-way strings whose mirror
+  fell outside the set are frozen, following the unbalanced chain and nothing more.
+- **Exact fleet slice + learned shave**: block budget = count − used + kept-side need;
+  the rounding aircraft that chain-splitting can cost is learned from any merge that
+  fails the global fleet-size check and subtracted on the block's next visit.
+- **Pair passes** (`PairPasses`, UI "+pairs", the relay): after the singles, region-union
+  blocks re-open cross-region demand — a cross od enters whole, with exact windows, so
+  feeder + trunk + distribution are decided in one model with no cross-pass bookkeeping.
+
+Measured on RLA (29,819 ods, full demand): the regional cycle gains **+4.0M to +5.0M in
+3–30 minutes** where the global solver, seeded identically, gains +0 in 90 (four
+consecutive runs). Blocks of 200–350 flights adopt in 4–50 seconds — the same
+local-branching heuristic that stalls on the full master bites instantly at block size.
+Pair passes run clean but adopted nothing at the 3x recourse tariff — the third
+independent probe (hub waves, round LP-promise, pairs) agreeing that the scattered
+cross-region tail is genuinely cheaper to contract; hence pairs default off.
+
 ## 4. Engineering layer
 
 - **Airline configuration files**: `acsp profile CODE OUT.json` exports any built-in

@@ -30,7 +30,7 @@ public class RegionalOptimizerTests
         double p0 = incumbent.Best!.Profit(inst);
 
         var reg = new RegionalOptimizer(inst, new RegionalOptions
-        { BlockTimeLimitSeconds = 15, Cycles = 1, LpBackend = "highs" });
+        { BlockTimeLimitSeconds = 15, Cycles = 1, LpBackend = "highs", PairPasses = true });
         var (best, profit, blocks) = reg.Run(incumbent.Best);
 
         // the merge guard makes the cycle monotone: never worse than the incumbent,
