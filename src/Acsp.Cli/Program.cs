@@ -267,18 +267,22 @@ static int RegionalBench(string[] a)
     double p0 = baseRes.Objective;
     Console.WriteLine($"base incumbent: {p0:F0} (gap {baseRes.Gap:P1})");
 
-    Console.WriteLine($"== arm A: global continuation ({armTime:F0}s)");
-    var armA = new BranchAndPrice(inst, new BpcOptions
+    double pA = p0;
+    if (!Flag(a, "skip-global"))
     {
-        TimeLimitSeconds = armTime, SeedSolution = baseRes.Best, LoadSeedFlows = false,
-        SeedPaths = baseRes.PathPool, SeedStrings = baseRes.StringPool,
-        LocalBranching = true, MipHeuristicTimeLimit = Math.Max(20, armTime * 0.3),
-    });
-    armA.Progress += p => { if (p.Phase.StartsWith("incumbent")) Console.WriteLine(
-        $"  A [{p.ElapsedSeconds,7:F1}s] inc {p.Incumbent,15:F0} {p.Phase}"); };
-    var resA = armA.Solve();
-    double pA = Math.Max(p0, resA.Objective);
-    Console.WriteLine($"arm A: {pA:F0} ({pA - p0:+0;-0;+0} vs base)");
+        Console.WriteLine($"== arm A: global continuation ({armTime:F0}s)");
+        var armA = new BranchAndPrice(inst, new BpcOptions
+        {
+            TimeLimitSeconds = armTime, SeedSolution = baseRes.Best, LoadSeedFlows = false,
+            SeedPaths = baseRes.PathPool, SeedStrings = baseRes.StringPool,
+            LocalBranching = true, MipHeuristicTimeLimit = Math.Max(20, armTime * 0.3),
+        });
+        armA.Progress += p => { if (p.Phase.StartsWith("incumbent")) Console.WriteLine(
+            $"  A [{p.ElapsedSeconds,7:F1}s] inc {p.Incumbent,15:F0} {p.Phase}"); };
+        var resA = armA.Solve();
+        pA = Math.Max(p0, resA.Objective);
+        Console.WriteLine($"arm A: {pA:F0} ({pA - p0:+0;-0;+0} vs base)");
+    }
 
     Console.WriteLine($"== arm B: regional cycle (blocks {blockTime:F0}s, total {armTime:F0}s)");
     var reg = new RegionalOptimizer(inst, new RegionalOptions

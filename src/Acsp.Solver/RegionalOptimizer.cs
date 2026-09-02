@@ -88,9 +88,17 @@ public sealed class RegionalOptimizer
             foreach (var (name, _, airports) in regions)
             {
                 if (ct.IsCancellationRequested) return (best, bestProfit, blocks);
-                if (_opt.TotalTimeLimitSeconds > 0
-                    && sw.Elapsed.TotalSeconds > _opt.TotalTimeLimitSeconds)
+                // hard budget: the next block only gets what remains of the total budget,
+                // so the cycle cannot overshoot even when a block solve overruns its slice
+                double remaining = _opt.TotalTimeLimitSeconds > 0
+                    ? _opt.TotalTimeLimitSeconds - sw.Elapsed.TotalSeconds
+                    : double.PositiveInfinity;
+                if (remaining <= 0)
+                {
+                    Progress?.Invoke($"[{DateTime.Now:HH:mm:ss}] total budget exhausted " +
+                        $"({sw.Elapsed.TotalSeconds:F0}s), stopping");
                     return (best, bestProfit, blocks);
+                }
                 var t0 = sw.Elapsed.TotalSeconds;
                 var block = BuildBlock(best, airports);
                 if (block is null)
@@ -100,12 +108,13 @@ public sealed class RegionalOptimizer
                     continue;
                 }
                 var (sub, seed, map) = block.Value;
-                Progress?.Invoke($"[{name}] block: {sub.Airports.Length} airports, " +
-                    $"{sub.CargoFlights.Count()} flights, {sub.Ods.Length} ods, fleet " +
+                Progress?.Invoke($"[{DateTime.Now:HH:mm:ss}] [{name}] block: " +
+                    $"{sub.Airports.Length} airports, {sub.CargoFlights.Count()} flights, " +
+                    $"{sub.Ods.Length} ods, fleet " +
                     string.Join("/", sub.Fleets.Select(k => k.Count)));
                 var bpc = new BranchAndPrice(sub, new BpcOptions
                 {
-                    TimeLimitSeconds = _opt.BlockTimeLimitSeconds,
+                    TimeLimitSeconds = Math.Min(_opt.BlockTimeLimitSeconds, remaining),
                     GapTarget = _opt.GapTarget, LpBackend = _opt.LpBackend,
                     SeedSolution = seed, LoadSeedFlows = false,
                     LocalBranching = _opt.LocalBranching, LocalBranchK = _opt.LocalBranchK,
@@ -130,7 +139,8 @@ public sealed class RegionalOptimizer
                         $"({feas.Violations.Count}v: {feas.Violations[0]})"
                     : accepted ? $"accepted +{profit - bestProfit:F0}"
                     : "no improvement"));
-                Progress?.Invoke($"[{name}] {blocks[^1].Note} ({secs:F0}s)");
+                Progress?.Invoke($"[{DateTime.Now:HH:mm:ss}] [{name}] {blocks[^1].Note} " +
+                    $"({secs:F0}s, cycle clock {sw.Elapsed.TotalSeconds:F0}s)");
                 if (accepted) { best = merged; bestProfit = profit; }
             }
         return (best, bestProfit, blocks);
@@ -156,7 +166,7 @@ public sealed class RegionalOptimizer
             .Where(f => f.LegIds.All(l => region.Contains(_inst.Legs[l].Origin)
                 && region.Contains(_inst.Legs[l].Destination)))
             .Select(f => f.Id).ToHashSet();
-        for (int guard = 0; guard < 8; guard++)
+        while (true) // kept shrinks strictly every pass: termination is structural
         {
             var degenerate = new HashSet<int>();
             foreach (var (path, _) in incumbent.Flows)
@@ -299,15 +309,22 @@ public sealed class RegionalOptimizer
             foreach (var (s, e) in Runs(path, kept))
             {
                 bool wholePath = s == 0 && e == path.LegIds.Length - 1;
-                if (wholePath && wholeOd.TryGetValue(path.OdId, out int who))
+                if (wholeOd.TryGetValue(path.OdId, out int who))
                 {
-                    // fully-regional flow of a fully-regional od: seed it on the whole od
-                    seedFlows.Add((new CargoPath
+                    // an od modeled WHOLE never donates runs too — that would duplicate its
+                    // demand in the block. Fully-regional flows seed the whole od; partial
+                    // runs (the incumbent routed it outside the region) are simply dropped
+                    // and the block re-decides the od from scratch
+                    if (wholePath)
                     {
-                        OdId = who,
-                        LegIds = [.. Enumerable.Range(s, e - s + 1).Select(i => legMap[path.LegIds[i]])],
-                    }, tonnes));
-                    shippedWhole[path.OdId] += tonnes;
+                        seedFlows.Add((new CargoPath
+                        {
+                            OdId = who,
+                            LegIds = [.. Enumerable.Range(s, e - s + 1)
+                                .Select(i => legMap[path.LegIds[i]])],
+                        }, tonnes));
+                        shippedWhole[path.OdId] += tonnes;
+                    }
                     continue;
                 }
                 if (tonnes <= 1e-6) continue;
