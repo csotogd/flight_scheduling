@@ -205,16 +205,33 @@ public sealed class RegionalOptimizer
         while (true) // kept shrinks strictly every pass: termination is structural
         {
             var degenerate = new HashSet<int>();
-            // (a) rotation purity: a rotation is either wholly re-decidable or wholly
-            // frozen — otherwise neither the seed nor the frozen remainder assembles into
-            // complete cycles (an aircraft landing on a frozen flight and departing on a
-            // kept one leaves both sides unbalanced at that airport)
-            foreach (var r in incumbent.Rotations)
-                if (r.Strings.Any(s => s.FlightIds.Any(f => !kept.Contains(f)))
-                    && r.Strings.Any(s => s.FlightIds.Any(kept.Contains)))
-                    foreach (var s in r.Strings)
-                        foreach (var f in s.FlightIds)
-                            if (kept.Contains(f)) degenerate.Add(f);
+            // (a) balance repair: the kept SELECTED strings must be balanced per
+            // (fleet, airport) or the seed cannot assemble into cycles. Round trips are
+            // self-balanced; the offenders are one-way strings whose mirror fell outside
+            // the set (e.g. a multi-stop trunk with an en-route stop in a third region).
+            // Freeze one contributing string per unbalanced (fleet, airport) and iterate —
+            // cascades follow the unbalanced chain and stop there, instead of freezing
+            // whole mixed rotations wholesale.
+            var net = new Dictionary<(int Fleet, int Airport), int>();
+            var oneWay = new List<(FlightString S, int O, int D)>();
+            foreach (var st in incumbent.SelectedStrings)
+            {
+                if (!st.FlightIds.All(kept.Contains)) continue;
+                int o = _inst.FlightOrigin(_inst.Flights[st.FlightIds[0]]);
+                int d = _inst.FlightDestination(_inst.Flights[st.FlightIds[^1]]);
+                if (o == d) continue;
+                oneWay.Add((st, o, d));
+                net[(st.FleetId, o)] = net.GetValueOrDefault((st.FleetId, o)) + 1;
+                net[(st.FleetId, d)] = net.GetValueOrDefault((st.FleetId, d)) - 1;
+            }
+            foreach (var ((fleet, airport), n) in net.Where(kv => kv.Value > 0))
+            {
+                var offender = oneWay.FirstOrDefault(x =>
+                    x.S.FleetId == fleet && x.O == airport
+                    && x.S.FlightIds.All(f => !degenerate.Contains(f)));
+                if (offender.S is not null)
+                    foreach (var f in offender.S.FlightIds) degenerate.Add(f);
+            }
             // (b) freeze the flights of degenerate cuts (a loop entering and leaving the
             // region at the same airport) and of paths crossing the region MORE THAN ONCE:
             // the merge splices exactly one regional segment per donated path — donating
@@ -239,13 +256,31 @@ public sealed class RegionalOptimizer
         // fleet slice: assemble the FROZEN strings alone and charge their aircraft need;
         // the remainder is the region's budget. (Charging whole mixed rotations would
         // double-count the aircraft that the region's own seed strings still need.)
-        // rotation purity makes the fleet split EXACT: frozen rotations keep their
-        // aircraft, everything else (pure re-decidable rotations + idle airplanes) is the
-        // block's budget — both sides assemble by construction
+        // fleet slice: the block may use the idle airplanes plus whatever the kept strings
+        // themselves consume today — budget = count - used(all) + used(kept side). The kept
+        // side assembles by construction after balance repair; if it still fails, skip the
+        // block rather than crash (the cycle simply moves on).
         var frozenNeed = new int[_inst.Fleets.Length];
-        foreach (var r in incumbent.Rotations)
-            if (r.Strings.Any(s => s.FlightIds.Any(f => !kept.Contains(f))))
-                frozenNeed[r.FleetId] += r.AircraftNeeded(_inst);
+        try
+        {
+            var totalUsed = new int[_inst.Fleets.Length];
+            foreach (var r in incumbent.Rotations)
+                totalUsed[r.FleetId] += r.AircraftNeeded(_inst);
+            var keptSol = new Solution
+            {
+                SelectedStrings = incumbent.SelectedStrings
+                    .Where(st => st.FlightIds.All(kept.Contains)).ToList(),
+                Flows = [], SelectedExternalFlights = [],
+                WithMaintenance = incumbent.WithMaintenance,
+            };
+            SolutionAssembler.AssembleRotations(_inst, keptSol);
+            var keptNeed = new int[_inst.Fleets.Length];
+            foreach (var r in keptSol.Rotations)
+                keptNeed[r.FleetId] += r.AircraftNeeded(_inst);
+            for (int k = 0; k < _inst.Fleets.Length; k++)
+                frozenNeed[k] = totalUsed[k] - keptNeed[k];
+        }
+        catch (InvalidOperationException) { return null; }
 
         // sub airports/fleets (dense re-ids; maintenance disabled — blocks run without it)
         var subAirports = region.OrderBy(x => x).ToList();
