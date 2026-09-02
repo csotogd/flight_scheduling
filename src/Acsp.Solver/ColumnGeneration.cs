@@ -75,6 +75,13 @@ public sealed class ColumnGeneration
     /// <summary>Fired after every pricing iteration: (iteration, lp objective, columns added).</summary>
     public event Action<int, double, int>? IterationProgress;
 
+    /// <summary>Wall seconds of the last pricing sweep / column adds / LP re-solve — the
+    /// per-iteration cost breakdown that tells which lever to pull next.</summary>
+    public double LastPriceSeconds => _lastPriceSeconds;
+    public double LastAddSeconds => _lastAddSeconds;
+    public double LastLpSeconds => _lastLpSeconds;
+    private double _lastPriceSeconds, _lastAddSeconds, _lastLpSeconds;
+
     /// <summary>
     /// Solves the LP of the current node to (near) optimality via column generation. When
     /// <paramref name="deadline"/> returns true the loop stops early and returns the Farley
@@ -116,11 +123,13 @@ public sealed class ColumnGeneration
             // on the deadline iteration always run string pricing too: the Farley bound
             // needs reduced costs from both pricers
             bool priceStrings = deadlineHit || (pricingIters - 1) % _opt.StringPricingFrequency == 0;
+            var swPrice = System.Diagnostics.Stopwatch.StartNew();
             var pathTask = Task.Run(() => _pathPricer.Price(duals, rest, _opt.Eps), ct);
             var stringTask = priceStrings
                 ? Task.Run(() => _stringPricer.Price(duals, rest, _opt.MaxStringColumnsPerIteration, _opt.Eps), ct)
                 : Task.FromResult(new List<StringPricer.PricedString>());
             Task.WaitAll([pathTask, stringTask], ct);
+            _lastPriceSeconds = swPrice.Elapsed.TotalSeconds;
 
             // valid bounds only ever come from true-dual passes: reduced costs against
             // smoothed prices do not bound the LP the master actually solved
@@ -146,16 +155,20 @@ public sealed class ColumnGeneration
             }
 
             center = trueDuals;
+            var swAdd = System.Diagnostics.Stopwatch.StartNew();
             int added = 0;
             foreach (var p in pathTask.Result)
                 if (_rmp.AddPath(p.Path)) { added++; pathsAdded++; }
             foreach (var s in stringTask.Result)
                 if (_rmp.AddString(s.Str)) { added++; stringsAdded++; }
+            _lastAddSeconds = swAdd.Elapsed.TotalSeconds;
 
             IterationProgress?.Invoke(pricingIters, lp.Objective, added);
             if (added > 0)
             {
+                var swLp = System.Diagnostics.Stopwatch.StartNew();
                 lp = _rmp.SolveLp();
+                _lastLpSeconds = swLp.Elapsed.TotalSeconds;
                 continue;
             }
             // mispricing: a smoothed pass finding nothing proves nothing about the true

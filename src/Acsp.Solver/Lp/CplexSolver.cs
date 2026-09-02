@@ -35,6 +35,11 @@ public sealed class CplexSolver : ILpSolver
         _env = Native.CPXopenCPLEX(out int status);
         if (_env == IntPtr.Zero) throw new InvalidOperationException($"CPXopenCPLEX failed ({status})");
         Check(Native.CPXsetintparam(_env, 1035, 0), "SCRIND off"); // CPX_PARAM_SCRIND
+        // LP method override for experiments (CPX_PARAM_LPMETHOD: 0 auto, 1 primal,
+        // 2 dual, 4 barrier, 5 sifting — sifting targets colgen masters with far more
+        // columns than rows, 6 concurrent). Unset = CPLEX's automatic choice.
+        if (int.TryParse(Environment.GetEnvironmentVariable("ACSP_LPMETHOD"), out int m))
+            Check(Native.CPXsetintparam(_env, 1062, m), "LPMETHOD");
         _lp = Native.CPXcreateprob(_env, out status, "acsp");
         if (_lp == IntPtr.Zero) throw new InvalidOperationException($"CPXcreateprob failed ({status})");
         Check(Native.CPXchgobjsen(_env, _lp, -1), "chgobjsen"); // CPX_MAX

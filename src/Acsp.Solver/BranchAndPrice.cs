@@ -94,7 +94,9 @@ public sealed class BranchAndPrice
         colgen.IterationProgress += (iter, obj, added) =>
             Progress?.Invoke(new BpcProgress(nodesExplored, -1, incumbent, obj,
                 double.NaN, rmp.Paths.Count, rmp.Strings.Count, rmp.CutCount,
-                sw.Elapsed.TotalSeconds, $"colgen iter {iter} (+{added} cols)"));
+                sw.Elapsed.TotalSeconds, $"colgen iter {iter} (+{added} cols, " +
+                $"price {colgen.LastPriceSeconds:F1}s add {colgen.LastAddSeconds:F1}s " +
+                $"lp {colgen.LastLpSeconds:F1}s)"));
 
         var stack = new Stack<BranchState>();
         stack.Push(BranchState.Root(_inst));
