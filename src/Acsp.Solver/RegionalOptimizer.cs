@@ -86,6 +86,7 @@ public sealed class RegionalOptimizer
         SolutionAssembler.AssembleRotations(_inst, best);
         double bestProfit = best.Profit(_inst);
         var blocks = new List<RegionalBlockResult>();
+        var shaves = new Dictionary<string, int[]>(); // learned fleet-budget corrections
         var regions = Regions();
         Progress?.Invoke($"regions: {string.Join(", ", regions.Select(r => r.Name))}");
 
@@ -136,7 +137,8 @@ public sealed class RegionalOptimizer
                     return (best, bestProfit, blocks);
                 }
                 var t0 = sw.Elapsed.TotalSeconds;
-                var block = BuildBlock(best, airports);
+                var block = BuildBlock(best, airports,
+                    shaves.TryGetValue(name, out var sh) ? sh : null);
                 if (block is null)
                 {
                     blocks.Add(new(name, airports.Count, 0, 0, bestProfit, bestProfit, 0,
@@ -167,6 +169,20 @@ public sealed class RegionalOptimizer
                 var merged = MergeBlock(best, res.Best, map);
                 SolutionAssembler.AssembleRotations(_inst, merged);
                 var feas = FeasibilityChecker.Check(_inst, merged);
+                if (!feas.IsFeasible)
+                {
+                    // chain-splitting can cost a rounding aircraft per fragment that the
+                    // block budget cannot foresee; learn the observed excess so the next
+                    // visit of this block runs with a corrected (smaller) fleet slice
+                    var usage = new int[_inst.Fleets.Length];
+                    foreach (var r in merged.Rotations)
+                        usage[r.FleetId] += r.AircraftNeeded(_inst);
+                    var shave = shaves.TryGetValue(name, out var prev)
+                        ? prev : new int[_inst.Fleets.Length];
+                    for (int k = 0; k < _inst.Fleets.Length; k++)
+                        shave[k] = Math.Max(shave[k], usage[k] - _inst.Fleets[k].Count);
+                    if (shave.Any(x => x > 0)) shaves[name] = shave;
+                }
                 double profit = feas.IsFeasible ? merged.Profit(_inst) : double.NegativeInfinity;
                 bool accepted = feas.IsFeasible && profit > bestProfit + 1e-6;
                 blocks.Add(new(name, airports.Count, sub.CargoFlights.Count(), sub.Ods.Length,
@@ -192,7 +208,7 @@ public sealed class RegionalOptimizer
     /// <summary>Builds the regional sub-instance, its seed (the incumbent's regional part)
     /// and the id maps. Null when the region has no re-decidable flight.</summary>
     private (Instance Sub, Solution Seed, BlockMap Map)? BuildBlock(
-        Solution incumbent, HashSet<int> region)
+        Solution incumbent, HashSet<int> region, int[]? fleetShave = null)
     {
         var p = _inst.Period;
         // a flight is re-decidable ("kept") when every leg stays inside the region; a
@@ -300,7 +316,10 @@ public sealed class RegionalOptimizer
         var fleets = _inst.Fleets.Select(k => new FleetType
         {
             Id = k.Id, Code = k.Code,
-            Count = Math.Max(0, k.Count - frozenNeed[k.Id]),
+            // fleetShave: chain-splitting overhead LEARNED from a previous merge of this
+            // block that failed the global fleet-size check by that many aircraft
+            Count = Math.Max(0, k.Count - frozenNeed[k.Id]
+                - (fleetShave is null ? 0 : fleetShave[k.Id])),
             FixedCostPerAircraft = k.FixedCostPerAircraft, MaxWeight = k.MaxWeight,
             MaxVolume = k.MaxVolume, RangeKm = k.RangeKm, RangeMaxKm = k.RangeMaxKm,
             PayloadAtMaxRangeT = k.PayloadAtMaxRangeT, CruiseSpeedKmH = k.CruiseSpeedKmH,
