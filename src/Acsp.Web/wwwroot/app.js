@@ -290,6 +290,7 @@ function formRequest() {
     set: +$("set").value,
     seed: +$("seed").value,
     maintenance: $("maintenance").checked,
+    regional: $("regional").checked,
     timeLimitSeconds: +$("timeLimit").value,
     gapTarget: 0.005,
     uploadId: upload?.uploadId ?? null,
@@ -361,6 +362,7 @@ async function startDesign() {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       airline: req.airline, set: req.set, seed: req.seed, maintenance: req.maintenance,
+      regional: req.regional,
       roundTimeLimitSeconds: req.timeLimitSeconds, gapTarget: req.gapTarget,
       uploadId: req.uploadId,
       batch: +$("designBatch").value, maxRounds: +$("designRounds").value,

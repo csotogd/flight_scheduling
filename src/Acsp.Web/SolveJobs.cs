@@ -7,11 +7,13 @@ using Acsp.Solver;
 namespace Acsp.Web;
 
 public sealed record SolveRequest(string Airline, int Set, int Seed, bool Maintenance,
-    double TimeLimitSeconds, double GapTarget, string? UploadId = null);
+    double TimeLimitSeconds, double GapTarget, string? UploadId = null,
+    bool Regional = false);
 
 public sealed record DesignRequest(string Airline, int Set, int Seed, bool Maintenance,
     double RoundTimeLimitSeconds, double GapTarget, string? UploadId,
-    int Batch, int MaxRounds, double StopThreshold, int EvictAfter);
+    int Batch, int MaxRounds, double StopThreshold, int EvictAfter,
+    bool Regional = false);
 
 /// <summary>Instances uploaded as Excel workbooks, kept in memory for this server session.</summary>
 public sealed class UploadStore
@@ -98,6 +100,7 @@ public sealed class SolveJobManager
                 RoundTimeLimitSeconds = req.RoundTimeLimitSeconds,
                 GapTarget = req.GapTarget,
                 WithMaintenance = req.Maintenance,
+                RegionalPolish = req.Regional,
             });
             var lastEvent = DateTime.MinValue;
             designer.Progress += p =>
@@ -181,6 +184,32 @@ public sealed class SolveJobManager
                 lock (job.EventLog) job.EventLog.Add(e);
             };
             var res = bpc.Solve(job.Cancel.Token);
+            // "split" mode: polish the schedule with the geographic block cycle (regions,
+            // then cross-region pairs), same budget again, monotone merges only
+            if (job.Request.Regional && !job.Request.Maintenance && res.Best is not null
+                && !job.Cancel.IsCancellationRequested)
+            {
+                var ro = new RegionalOptimizer(inst, new RegionalOptions
+                {
+                    TotalTimeLimitSeconds = job.Request.TimeLimitSeconds,
+                    BlockTimeLimitSeconds = Math.Max(60, job.Request.TimeLimitSeconds / 4),
+                    GapTarget = job.Request.GapTarget,
+                });
+                ro.Progress += msg =>
+                {
+                    var e = new { type = "design-phase", round = 0, phase = msg };
+                    job.Events.Enqueue(e);
+                    lock (job.EventLog) job.EventLog.Add(e);
+                };
+                var (polished, pProfit, _) = ro.Run(res.Best, job.Cancel.Token);
+                if (pProfit > res.Objective + 1e-6)
+                    res = res with
+                    {
+                        Best = polished, Objective = pProfit,
+                        Gap = Math.Max(0, res.Bound - pProfit)
+                            / Math.Max(1e-9, Math.Abs(pProfit)),
+                    };
+            }
             if (res.Best is not null)
             {
                 job.Result = SolutionJson.Build(inst, res);

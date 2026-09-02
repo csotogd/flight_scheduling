@@ -6,6 +6,11 @@ public sealed record RegionalOptions
 {
     /// <summary>Time budget per block solve in seconds.</summary>
     public double BlockTimeLimitSeconds { get; init; } = 450;
+    /// <summary>After the single-region passes of each cycle, run PAIRWISE passes over the
+    /// region unions with cross-region unserved/contracted demand (the relay: a cross od
+    /// enters the pair block WHOLE, with exact windows — feeder, trunk and distribution are
+    /// all re-decidable in one model, no cross-pass bookkeeping or estimates needed).</summary>
+    public bool PairPasses { get; init; } = true;
     /// <summary>Full cycles over the regions (a total time budget can cut them short).</summary>
     public int Cycles { get; init; } = 2;
     /// <summary>Total wall-clock budget in seconds; 0 = unlimited (cycles decide).</summary>
@@ -84,8 +89,39 @@ public sealed class RegionalOptimizer
         var regions = Regions();
         Progress?.Invoke($"regions: {string.Join(", ", regions.Select(r => r.Name))}");
 
+        // pass plan per cycle: every single region, then — the relay — every region PAIR
+        // that carries cross demand between its two sides, heaviest cross tonnage first
+        List<(string Name, HashSet<int> Airports)> Passes(Solution cur)
+        {
+            var passes = regions
+                .Select(r => (r.Name, Airports: r.Airports)).ToList();
+            if (!_opt.PairPasses || regions.Count < 2) return passes;
+            int RegionOf(int airport) =>
+                regions.FindIndex(r => r.Airports.Contains(airport));
+            // cross tonnage still on the table: unshipped + contracted, per region pair
+            var shipped = new double[_inst.Ods.Length];
+            foreach (var (p, t) in cur.Flows) shipped[p.OdId] += t;
+            var cross = new Dictionary<(int, int), double>();
+            foreach (var od in _inst.Ods)
+            {
+                double open = od.Weight - shipped[od.Id];
+                if (open <= 1e-3) continue;
+                int a = RegionOf(od.Origin), b = RegionOf(od.Destination);
+                if (a == b) continue;
+                var key = a < b ? (a, b) : (b, a);
+                cross[key] = cross.GetValueOrDefault(key) + open;
+            }
+            foreach (var ((a, b), tonnes) in cross.OrderByDescending(kv => kv.Value))
+            {
+                if (tonnes < 1.0) continue;
+                passes.Add(($"{regions[a].Name}|{regions[b].Name}",
+                    [.. regions[a].Airports.Concat(regions[b].Airports)]));
+            }
+            return passes;
+        }
+
         for (int cycle = 0; cycle < _opt.Cycles; cycle++)
-            foreach (var (name, _, airports) in regions)
+            foreach (var (name, airports) in Passes(best))
             {
                 if (ct.IsCancellationRequested) return (best, bestProfit, blocks);
                 // hard budget: the next block only gets what remains of the total budget,

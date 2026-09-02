@@ -62,6 +62,12 @@ public sealed record DesignOptions
     /// the round's MIP heuristic to reconsider the whole network at once.</summary>
     public bool LocalBranching { get; init; } = true;
     public int LocalBranchK { get; init; } = 60;
+    /// <summary>After the final solve, polish the schedule with the geographic block cycle
+    /// (RegionalOptimizer): freeze the world, re-optimize one hub region at a time, merge
+    /// monotonically. "Split" vs "whole" as a switch — measured on RLA: +5.0M in under 4
+    /// minutes of cycle where the global continuation gained +0 in 90. Skipped when
+    /// maintenance is on (blocks solve without maintenance).</summary>
+    public bool RegionalPolish { get; init; }
     public double GapTarget { get; init; } = 0.005;
     public bool WithMaintenance { get; init; }
     public string? LpBackend { get; init; }
@@ -435,6 +441,47 @@ public sealed class NetworkDesigner
             else if (exactFinal)
                 stopReason += "; WARNING: exact final solve found no solution, best is on " +
                     "consolidated demand";
+        }
+
+        // optional geographic polish: freeze the world, re-optimize one hub region (and
+        // cross-region pairs, which carry the contracted relay demand) at a time, merge
+        // monotonically. Blocks solve without maintenance, so the polish is skipped when
+        // maintenance is on.
+        if (_opt.RegionalPolish && !_opt.WithMaintenance && !ct.IsCancellationRequested
+            && best.Res.Best is not null)
+        {
+            int rp = rounds[^1].Round + 1;
+            Progress?.Invoke(new DesignProgress(rp, "regional polish (split mode)", null));
+            var ro = new RegionalOptimizer(best.Inst, new RegionalOptions
+            {
+                BlockTimeLimitSeconds = _opt.RoundTimeLimitSeconds,
+                Cycles = 99, TotalTimeLimitSeconds = _opt.FinalTimeLimitSeconds,
+                GapTarget = _opt.GapTarget, LpBackend = _opt.LpBackend,
+                LocalBranching = _opt.LocalBranching, LocalBranchK = _opt.LocalBranchK,
+            });
+            ro.Progress += msg => Progress?.Invoke(new DesignProgress(rp, msg, null));
+            var swp = System.Diagnostics.Stopwatch.StartNew();
+            var (polished, pProfit, blockLog) = ro.Run(best.Res.Best, ct);
+            int adopted = blockLog.Count(b => b.Note.StartsWith("accepted"));
+            if (pProfit > best.Res.Objective + 1e-6)
+            {
+                double gain = pProfit - best.Res.Objective;
+                var newRes = best.Res with
+                {
+                    Best = polished, Objective = pProfit,
+                    Gap = Math.Max(0, best.Res.Bound - pProfit)
+                        / Math.Max(1e-9, Math.Abs(pProfit)),
+                };
+                best = (best.Inst, newRes, rp);
+                rounds.Add(new DesignRound(rp, pProfit, newRes.Bound, newRes.Gap,
+                    best.Inst.CargoFlights.Count(), 0, 0, 0, swp.Elapsed.TotalSeconds,
+                    $"regional polish: +{gain:F0} over {adopted} accepted blocks"));
+            }
+            else
+                rounds.Add(new DesignRound(rp, best.Res.Objective, best.Res.Bound,
+                    best.Res.Gap, best.Inst.CargoFlights.Count(), 0, 0, 0,
+                    swp.Elapsed.TotalSeconds, "regional polish: no improvement"));
+            Progress?.Invoke(new DesignProgress(rp, "round-done", null));
         }
 
         // final statuses: flown (or booked) in the best solution = accepted

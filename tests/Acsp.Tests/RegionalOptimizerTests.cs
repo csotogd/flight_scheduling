@@ -38,7 +38,9 @@ public class RegionalOptimizerTests
         Assert.True(profit >= p0 - 1e-6, $"regional cycle lost profit: {profit:F0} < {p0:F0}");
         var feas = FeasibilityChecker.Check(inst, best);
         Assert.True(feas.IsFeasible, feas.ToString());
-        Assert.Equal(2, blocks.Count); // one block per region in the single cycle
+        // one block per region plus the relay pair (SIN|BRU carries cross demand)
+        Assert.Equal(3, blocks.Count);
+        Assert.Contains(blocks, b => b.Region.Contains('|'));
         // every block bounded its model to its region
         foreach (var b in blocks)
             Assert.True(b.Flights <= inst.CargoFlights.Count(),
