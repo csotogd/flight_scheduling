@@ -35,12 +35,13 @@ The silo pipeline leaks money at every hand-off, because the four decisions are 
 - *"Design my network for me."* → the **autonomous design loop** invents candidate flights aimed at unserved demand, solves, keeps what pays, evicts what doesn't, and repeats until profit flattens — no human in the loop.
 - *"Which demand am I leaving on the ground, and what revenue is at risk?"* → demand-at-risk report in the web dashboard.
 - *"What if I must deliver **everything** (a service commitment), outsourcing what I can't fly myself?"* → deliver-all mode minimizes the contracting bill instead of maximizing cherry-picked profit.
+- *"The network is planet-scale — optimize it region by region."* → **regional split**: freeze the world, re-optimize one hub region at a time (optionally cross-region *pairs*), merge only when the globally verified profit improves. Measured: +4–5M in minutes where the whole-network solver stalled at +0 for 90.
 - *"My planner wants to hand-edit the schedule in Excel."* → full round-trip: export the instance to a workbook, edit, re-upload, re-optimize.
 
 ### Product surface
 
-- **Web dashboard** (`http://localhost:5170`): world map of the designed network, time-space diagram, rotation Gantt per aircraft, live solver convergence, O&D demand-at-risk report, P&L breakdown, design-round progress, Excel export.
-- **CLI**: `generate` / `solve` / `design` / `benchmark` / `template` / `diag`.
+- **Web dashboard** (`http://localhost:5170`): world map of the designed network (own flights by load, contracted lanes in amber), time-space diagram, rotation Gantt per aircraft, live solver convergence, O&D demand-at-risk report, P&L breakdown, design-round progress, Excel export. "Regional split" and "+pairs" are toolbar switches for both Solve and Design.
+- **CLI**: `generate` / `solve` / `design` (`--regional`, `--regional-pairs`) / `regional-bench` (A/B: whole-network vs split) / `benchmark` / `profile` / `template` / `diag`.
 - **Airline profiles**: any airline archetype exports to an editable JSON (hubs, fleets, costs, payload-range curves, curfews, demand model) and back.
 
 ---
@@ -200,7 +201,7 @@ flowchart LR
     EV -->|"3 flat rounds"| FIN["final rescue solve:<br/>base + every once-flown<br/>candidate, longer clock"]
 ```
 
-Key engineering that makes rounds cheap and monotone: **column-pool warm starts** (round *r* re-uses round *r−1*'s columns, so pricing only works on the incremental batch), **seeded incumbents** (a round can never return less than the previous one), and **eviction** (the active model stays bounded at ~300–3,000 flights while the explored pool grows unbounded). Batch-size economics, deliver-all mode, and the measured round-by-round numbers are in [ALGORITHM.md](ALGORITHM.md) §3.
+Key engineering that makes rounds cheap and monotone: **column-pool warm starts** (round *r* re-uses round *r−1*'s columns, so pricing only works on the incremental batch), **seeded incumbents** (a round can never return less than the previous one), and **eviction** (the active model stays bounded at ~300–3,000 flights while the explored pool grows unbounded). After the final solve, the optional **regional split** polishes the schedule geographically: one hub region re-optimized at a time against a frozen world, with exact gateway windows and a monotone merge guard (ALGORITHM.md §3.5). Batch-size economics, deliver-all mode, local-branching adoption, and the measured round-by-round numbers are in [ALGORITHM.md](ALGORITHM.md) §3.
 
 ---
 
@@ -238,8 +239,12 @@ dotnet run --project src/Acsp.Cli -c Release -- generate --airline all --set all
 # one integrated solve (add --maintenance for A-check constraints)
 dotnet run --project src/Acsp.Cli -c Release -- solve instances/RC-I-s1.json --time-limit 600
 
-# let it design the network autonomously
+# let it design the network autonomously (add --regional for the geographic polish)
 dotnet run --project src/Acsp.Cli -c Release -- design instances/RC-I-s1.json
+
+# A/B: whole-network continuation vs regional split, same base incumbent and budget
+dotnet run --project src/Acsp.Cli -c Release -- regional-bench instances/RLA-I-s1.json \
+  --base-time 300 --arm-time 900 --block-time 300
 
 # Table-3-style benchmark
 dotnet run --project src/Acsp.Cli -c Release -- benchmark --airlines RC,IC,MI,EX --sets 1,2,3 \
@@ -287,7 +292,7 @@ Full benchmark output lands in `results/RESULTS.md` when you run the benchmark l
 ├── src/
 │   ├── Acsp.Core/           ← domain model + independent FeasibilityChecker
 │   ├── Acsp.Data/           ← generator, profiles, JSON, Excel round-trip
-│   ├── Acsp.Solver/         ← RMP, pricers, cuts, branching, design loop, LP backends
+│   ├── Acsp.Solver/         ← RMP, pricers, cuts, branching, design loop, regional split, LP backends
 │   ├── Acsp.Cli/            ← command-line interface
 │   └── Acsp.Web/            ← dashboard (map, Gantt, P&L, live convergence)
 ├── tests/Acsp.Tests/        ← verification suite

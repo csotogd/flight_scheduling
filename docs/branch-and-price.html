@@ -1276,6 +1276,22 @@ if no such column exists anywhere             →  the LP optimum is PROVEN over
     </figcaption>
   </div>
 
+  <p>
+    <strong>Measured on RLA</strong> (29,819 O&amp;Ds, full demand): the regional cycle gains
+    <strong>+4–5M in 3–30 minutes</strong> of block time where the whole-network solver,
+    seeded identically, gained <strong>+0 in 90 minutes</strong> — four consecutive runs.
+    A 200–350-flight block adopts improvements in 4–50 seconds; the same heuristic stalls
+    completely on the full master. Every merge is accepted only when the independently
+    verified <em>global</em> profit improves, so the cycle is monotone by construction.
+    An optional <strong>relay</strong> (pair passes) re-opens cross-region demand by solving
+    region <em>unions</em>: a cross-border O&amp;D enters the pair block whole, with exact
+    windows, so feeder + trunk + distribution are decided in one model. On RLA the pairs ran
+    clean but adopted nothing at the 3× contracting tariff — the third independent probe
+    agreeing that the scattered cross-region tail is genuinely cheaper to contract — so
+    pairs default off. In the web UI both live on one switch: <em>regional split</em>
+    (and <em>+pairs</em>) next to the scenario picker.
+  </p>
+
   <h3>The rest of our layer, at a glance</h3>
   <div class="cards">
     <div class="card">
