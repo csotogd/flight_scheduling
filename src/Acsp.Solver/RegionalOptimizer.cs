@@ -236,10 +236,23 @@ public sealed class RegionalOptimizer
             Flows = [], SelectedExternalFlights = [],
             WithMaintenance = incumbent.WithMaintenance,
         };
-        SolutionAssembler.AssembleRotations(_inst, frozenSol);
         var frozenNeed = new int[_inst.Fleets.Length];
-        foreach (var r in frozenSol.Rotations)
-            frozenNeed[r.FleetId] += r.AircraftNeeded(_inst);
+        try
+        {
+            SolutionAssembler.AssembleRotations(_inst, frozenSol);
+            foreach (var r in frozenSol.Rotations)
+                frozenNeed[r.FleetId] += r.AircraftNeeded(_inst);
+        }
+        catch (InvalidOperationException)
+        {
+            // the frozen side alone need not be balanced (an aircraft may land on a frozen
+            // flight and depart on a kept one). Fall back to charging every incumbent
+            // rotation touching a frozen flight — an overcount, so the block is under- not
+            // over-budgeted, and the global merge guard stays the ground truth either way
+            foreach (var r in incumbent.Rotations)
+                if (r.Strings.Any(s => s.FlightIds.Any(f => !kept.Contains(f))))
+                    frozenNeed[r.FleetId] += r.AircraftNeeded(_inst);
+        }
 
         // sub airports/fleets (dense re-ids; maintenance disabled — blocks run without it)
         var subAirports = region.OrderBy(x => x).ToList();
