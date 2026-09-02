@@ -205,13 +205,23 @@ public sealed class RegionalOptimizer
         while (true) // kept shrinks strictly every pass: termination is structural
         {
             var degenerate = new HashSet<int>();
+            // (a) rotation purity: a rotation is either wholly re-decidable or wholly
+            // frozen — otherwise neither the seed nor the frozen remainder assembles into
+            // complete cycles (an aircraft landing on a frozen flight and departing on a
+            // kept one leaves both sides unbalanced at that airport)
+            foreach (var r in incumbent.Rotations)
+                if (r.Strings.Any(s => s.FlightIds.Any(f => !kept.Contains(f)))
+                    && r.Strings.Any(s => s.FlightIds.Any(kept.Contains)))
+                    foreach (var s in r.Strings)
+                        foreach (var f in s.FlightIds)
+                            if (kept.Contains(f)) degenerate.Add(f);
+            // (b) freeze the flights of degenerate cuts (a loop entering and leaving the
+            // region at the same airport) and of paths crossing the region MORE THAN ONCE:
+            // the merge splices exactly one regional segment per donated path — donating
+            // two runs of the same flow double-counts its tonnage
             foreach (var (path, _) in incumbent.Flows)
             {
                 var runs = Runs(path, kept).ToList();
-                // freeze the flights of (a) degenerate cuts (a loop entering and leaving
-                // the region at the same airport) and (b) paths crossing the region MORE
-                // THAN ONCE: v1 splices exactly one regional segment per donated path —
-                // donating two runs of the same flow double-counts its tonnage on merge
                 bool freeze = runs.Count > 1 || runs.Any(r =>
                     _inst.Legs[path.LegIds[r.Start]].Origin
                         == _inst.Legs[path.LegIds[r.End]].Destination
@@ -229,30 +239,13 @@ public sealed class RegionalOptimizer
         // fleet slice: assemble the FROZEN strings alone and charge their aircraft need;
         // the remainder is the region's budget. (Charging whole mixed rotations would
         // double-count the aircraft that the region's own seed strings still need.)
-        var frozenSol = new Solution
-        {
-            SelectedStrings = incumbent.SelectedStrings
-                .Where(st => !st.FlightIds.All(kept.Contains)).ToList(),
-            Flows = [], SelectedExternalFlights = [],
-            WithMaintenance = incumbent.WithMaintenance,
-        };
+        // rotation purity makes the fleet split EXACT: frozen rotations keep their
+        // aircraft, everything else (pure re-decidable rotations + idle airplanes) is the
+        // block's budget — both sides assemble by construction
         var frozenNeed = new int[_inst.Fleets.Length];
-        try
-        {
-            SolutionAssembler.AssembleRotations(_inst, frozenSol);
-            foreach (var r in frozenSol.Rotations)
+        foreach (var r in incumbent.Rotations)
+            if (r.Strings.Any(s => s.FlightIds.Any(f => !kept.Contains(f))))
                 frozenNeed[r.FleetId] += r.AircraftNeeded(_inst);
-        }
-        catch (InvalidOperationException)
-        {
-            // the frozen side alone need not be balanced (an aircraft may land on a frozen
-            // flight and depart on a kept one). Fall back to charging every incumbent
-            // rotation touching a frozen flight — an overcount, so the block is under- not
-            // over-budgeted, and the global merge guard stays the ground truth either way
-            foreach (var r in incumbent.Rotations)
-                if (r.Strings.Any(s => s.FlightIds.Any(f => !kept.Contains(f))))
-                    frozenNeed[r.FleetId] += r.AircraftNeeded(_inst);
-        }
 
         // sub airports/fleets (dense re-ids; maintenance disabled — blocks run without it)
         var subAirports = region.OrderBy(x => x).ToList();
