@@ -16,7 +16,13 @@ public sealed class PathPricer
     private readonly List<Arc>[] _succ;
     private readonly List<Arc>[] _pred; // reversed arcs, same cost/time
     private readonly Dictionary<int, (double[] Cost, int[] Time)> _bounds = [];
+    private readonly int[] _destinations; // distinct od destinations, for bound prewarming
     private readonly int _maxLabelsPerNode;
+
+    /// <summary>Worker threads for the per-od pricing sweep in <see cref="Price"/>.
+    /// 0 = one per core (default); 1 = sequential. Results are identical either way —
+    /// each od prices independently and the sweep collects them in od order.</summary>
+    public int MaxDegreeOfParallelism { get; set; }
 
     public PathPricer(Instance inst, int maxLabelsPerNode = 64)
     {
@@ -59,12 +65,22 @@ public sealed class PathPricer
         for (int u = 0; u < n; u++)
             foreach (var a in _succ[u])
                 _pred[a.To].Add(new Arc(u, a.Cost, a.Time, a.Transfer));
+        _destinations = inst.Ods.Select(o => o.Destination).Distinct().ToArray();
     }
 
     /// <summary>Admissible lower bounds (static cost, exact time) from every leg to a destination airport.</summary>
     private (double[] Cost, int[] Time) BoundsTo(int destAirport)
     {
         if (_bounds.TryGetValue(destAirport, out var cached)) return cached;
+        var res = ComputeBoundsTo(destAirport);
+        _bounds[destAirport] = res;
+        return res;
+    }
+
+    /// <summary>Pure bound computation (two backward Dijkstra runs); no shared state touched,
+    /// so prewarming may run one destination per core before a parallel pricing sweep.</summary>
+    private (double[] Cost, int[] Time) ComputeBoundsTo(int destAirport)
+    {
         int n = _inst.Legs.Length;
         var cost = new double[n];
         var time = new int[n];
@@ -98,9 +114,7 @@ public sealed class PathPricer
                 if (cand < time[a.To]) { time[a.To] = cand; pqT.Enqueue(a.To, cand); }
             }
         }
-        var res = (cost, time);
-        _bounds[destAirport] = res;
-        return res;
+        return (cost, time);
     }
 
     private readonly record struct Label(int Leg, double Cost, int Time, int Pred);
@@ -109,18 +123,40 @@ public sealed class PathPricer
 
     /// <summary>
     /// Prices all O&amp;Ds and returns the best improving path per O&amp;D (reduced cost &gt; eps).
-    /// useDijkstraOnly disables the A* guidance (for benchmarking, §9.3.4).
+    /// Each od is an independent shortest-path question over the same read-only graph and
+    /// prices, so the sweep runs one od per core; results are collected in od order, making
+    /// the output bit-identical to the sequential sweep. useDijkstraOnly disables the A*
+    /// guidance (for benchmarking, §9.3.4).
     /// </summary>
     public List<PricedPath> Price(MasterDuals duals, PricingRestrictions rest,
         double eps = 1e-6, bool useDijkstraOnly = false)
     {
-        var result = new List<PricedPath>();
-        foreach (var od in _inst.Ods)
-        {
-            var best = PriceOd(od, duals, rest, eps, useDijkstraOnly);
-            if (best is not null) result.Add(best);
-        }
-        return result;
+        Prewarm();
+        var results = new PricedPath?[_inst.Ods.Length];
+        Parallel.For(0, _inst.Ods.Length, Par(),
+            i => results[i] = PriceOd(_inst.Ods[i], duals, rest, eps, useDijkstraOnly));
+        var list = new List<PricedPath>();
+        foreach (var r in results)
+            if (r is not null) list.Add(r);
+        return list;
+    }
+
+    private ParallelOptions Par() => new()
+    {
+        MaxDegreeOfParallelism = MaxDegreeOfParallelism > 0
+            ? MaxDegreeOfParallelism : Environment.ProcessorCount,
+    };
+
+    /// <summary>Builds the per-destination A* bounds for every od destination, one Dijkstra
+    /// pair per core. After this, concurrent <see cref="PriceOd"/> calls only READ shared
+    /// state — callers running their own parallel od sweeps must prewarm first.</summary>
+    public void Prewarm()
+    {
+        var missing = _destinations.Where(d => !_bounds.ContainsKey(d)).ToArray();
+        if (missing.Length == 0) return;
+        var computed = new (double[], int[])[missing.Length];
+        Parallel.For(0, missing.Length, Par(), i => computed[i] = ComputeBoundsTo(missing[i]));
+        for (int i = 0; i < missing.Length; i++) _bounds[missing[i]] = computed[i];
     }
 
     public PricedPath? PriceOd(Od od, MasterDuals duals, PricingRestrictions rest,

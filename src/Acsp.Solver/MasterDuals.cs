@@ -34,4 +34,42 @@ public sealed class MasterDuals
         ArrBalance = new double[inst.Fleets.Length, inst.Flights.Length],
         FleetSize = new double[inst.Fleets.Length],
     };
+
+    /// <summary>
+    /// Convex combination alpha*center + (1-alpha)*current — the smoothed prices handed to
+    /// the pricers under dual stabilization (Wentges smoothing). Cut duals appear in either
+    /// operand or both; missing entries count as zero.
+    /// </summary>
+    public static MasterDuals Blend(MasterDuals center, MasterDuals current, double alpha)
+    {
+        double[] Mix(double[] a, double[] b)
+        {
+            var r = new double[a.Length];
+            for (int i = 0; i < a.Length; i++) r[i] = alpha * a[i] + (1 - alpha) * b[i];
+            return r;
+        }
+        double[,] Mix2(double[,] a, double[,] b)
+        {
+            var r = new double[a.GetLength(0), a.GetLength(1)];
+            for (int i = 0; i < a.GetLength(0); i++)
+                for (int j = 0; j < a.GetLength(1); j++)
+                    r[i, j] = alpha * a[i, j] + (1 - alpha) * b[i, j];
+            return r;
+        }
+        var cuts = new Dictionary<(int, int), double>();
+        foreach (var key in center.ImpliedBoundCuts.Keys.Union(current.ImpliedBoundCuts.Keys))
+            cuts[key] = alpha * center.ImpliedBoundCuts.GetValueOrDefault(key)
+                + (1 - alpha) * current.ImpliedBoundCuts.GetValueOrDefault(key);
+        return new MasterDuals
+        {
+            OdDemand = Mix(center.OdDemand, current.OdDemand),
+            LegWeight = Mix(center.LegWeight, current.LegWeight),
+            LegVolume = Mix(center.LegVolume, current.LegVolume),
+            FlightCover = Mix(center.FlightCover, current.FlightCover),
+            DepBalance = Mix2(center.DepBalance, current.DepBalance),
+            ArrBalance = Mix2(center.ArrBalance, current.ArrBalance),
+            FleetSize = Mix(center.FleetSize, current.FleetSize),
+            ImpliedBoundCuts = cuts,
+        };
+    }
 }

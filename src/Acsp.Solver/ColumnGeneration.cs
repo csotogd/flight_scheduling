@@ -17,6 +17,18 @@ public sealed record ColGenOptions
     public bool ExactStringPricing { get; init; }
     /// <summary>Label limit sigma of PRICE-S (§6.2).</summary>
     public int SigmaMaxLabels { get; init; } = 20;
+    /// <summary>Price each od on its own core (bit-identical results, collected in od
+    /// order); off = sequential sweep.</summary>
+    public bool ParallelPricing { get; init; } = true;
+    /// <summary>Dual stabilization (Wentges smoothing): hand the pricers a blend of the
+    /// previous stability center and the fresh duals, so early dual oscillation stops
+    /// producing throwaway columns. Mispricing-safe: whenever a smoothed pass finds nothing,
+    /// the pass is repeated with the TRUE duals before any conclusion is drawn, and valid
+    /// bounds (Farley) are only ever computed from true-dual passes. Off by default —
+    /// worthwhile on large instances, neutral-to-slightly-slower on small ones.</summary>
+    public bool DualStabilization { get; init; }
+    /// <summary>Weight of the stability center in the blend (0 = raw duals).</summary>
+    public double StabilizationAlpha { get; init; } = 0.7;
 }
 
 public sealed record ColGenStats(int PricingIterations, int CuttingIterations,
@@ -40,7 +52,10 @@ public sealed class ColumnGeneration
         _inst = inst;
         _rmp = rmp;
         _opt = opt ?? new ColGenOptions();
-        _pathPricer = new PathPricer(inst);
+        _pathPricer = new PathPricer(inst)
+        {
+            MaxDegreeOfParallelism = _opt.ParallelPricing ? 0 : 1,
+        };
         _stringPricer = new StringPricer(inst, rmp.WithMaintenance, rmp.Network.CountTime)
         {
             ExactMode = _opt.ExactStringPricing,
@@ -73,6 +88,7 @@ public sealed class ColumnGeneration
     {
         int pricingIters = 0, cuttingIters = 0, pathsAdded = 0, stringsAdded = 0, cutsAdded = 0;
         var lp = _rmp.SolveLp();
+        MasterDuals? center = null; // dual stabilization center (last true duals seen)
         // tightest valid dual bound seen across the convergence: every full pricing pass
         // yields one (Farley), and an interruption right after a cutting iteration (duals in
         // mid-swing, huge reduced costs) then falls back to the best earlier bound instead
@@ -86,8 +102,17 @@ public sealed class ColumnGeneration
 
             // ---- pricing iteration: paths and strings in parallel (§5)
             pricingIters++;
-            var duals = _rmp.GetDuals(lp);
+            var trueDuals = _rmp.GetDuals(lp);
             bool deadlineHit = deadline?.Invoke() ?? false;
+            // dual stabilization: price against a blend of the stability center and the
+            // fresh duals so early oscillation stops producing throwaway columns. The
+            // deadline iteration always prices TRUE duals (the Farley bound needs them),
+            // and a smoothed pass that finds nothing is repeated with true duals below —
+            // the raw prices always have the last word.
+            bool smoothed = _opt.DualStabilization && center is not null && !deadlineHit;
+            var duals = smoothed
+                ? MasterDuals.Blend(center!, trueDuals, _opt.StabilizationAlpha)
+                : trueDuals;
             // on the deadline iteration always run string pricing too: the Farley bound
             // needs reduced costs from both pricers
             bool priceStrings = deadlineHit || (pricingIters - 1) % _opt.StringPricingFrequency == 0;
@@ -97,7 +122,9 @@ public sealed class ColumnGeneration
                 : Task.FromResult(new List<StringPricer.PricedString>());
             Task.WaitAll([pathTask, stringTask], ct);
 
-            if (priceStrings && lp.Status == LpStatus.Optimal)
+            // valid bounds only ever come from true-dual passes: reduced costs against
+            // smoothed prices do not bound the LP the master actually solved
+            if (!smoothed && priceStrings && lp.Status == LpStatus.Optimal)
                 bestValidBound = Math.Min(bestValidBound,
                     FarleyBound(lp.Objective, pathTask.Result, stringTask.Result));
 
@@ -118,6 +145,7 @@ public sealed class ColumnGeneration
                     DeadlineHit: true, DualBound: bestValidBound);
             }
 
+            center = trueDuals;
             int added = 0;
             foreach (var p in pathTask.Result)
                 if (_rmp.AddPath(p.Path)) { added++; pathsAdded++; }
@@ -130,10 +158,27 @@ public sealed class ColumnGeneration
                 lp = _rmp.SolveLp();
                 continue;
             }
-            // exhaust the string pricer before concluding, if it was skipped this iteration
-            if (!priceStrings)
+            // mispricing: a smoothed pass finding nothing proves nothing about the true
+            // prices — reprice with the raw duals before drawing any conclusion
+            if (smoothed)
             {
-                var late = _stringPricer.Price(duals, rest, _opt.MaxStringColumnsPerIteration, _opt.Eps);
+                var truePaths = _pathPricer.Price(trueDuals, rest, _opt.Eps);
+                var trueStrings = _stringPricer.Price(trueDuals, rest,
+                    _opt.MaxStringColumnsPerIteration, _opt.Eps);
+                if (lp.Status == LpStatus.Optimal)
+                    bestValidBound = Math.Min(bestValidBound,
+                        FarleyBound(lp.Objective, truePaths, trueStrings));
+                int trueAdded = truePaths.Count(p => _rmp.AddPath(p.Path));
+                pathsAdded += trueAdded;
+                int trueStringsAdded = trueStrings.Count(s => _rmp.AddString(s.Str));
+                stringsAdded += trueStringsAdded;
+                if (trueAdded + trueStringsAdded > 0) { lp = _rmp.SolveLp(); continue; }
+            }
+            // exhaust the string pricer before concluding, if it was skipped this iteration
+            // (the mispricing branch above already repriced strings with the true duals)
+            if (!priceStrings && !smoothed)
+            {
+                var late = _stringPricer.Price(trueDuals, rest, _opt.MaxStringColumnsPerIteration, _opt.Eps);
                 int lateAdded = late.Count(s => _rmp.AddString(s.Str));
                 stringsAdded += lateAdded;
                 if (lateAdded > 0) { lp = _rmp.SolveLp(); continue; }

@@ -8,12 +8,12 @@ namespace Acsp.Web;
 
 public sealed record SolveRequest(string Airline, int Set, int Seed, bool Maintenance,
     double TimeLimitSeconds, double GapTarget, string? UploadId = null,
-    bool Regional = false, bool Pairs = false);
+    bool Regional = false, bool Pairs = false, bool Stabilize = false);
 
 public sealed record DesignRequest(string Airline, int Set, int Seed, bool Maintenance,
     double RoundTimeLimitSeconds, double GapTarget, string? UploadId,
     int Batch, int MaxRounds, double StopThreshold, int EvictAfter,
-    bool Regional = false, bool Pairs = false);
+    bool Regional = false, bool Pairs = false, bool Stabilize = false);
 
 /// <summary>Instances uploaded as Excel workbooks, kept in memory for this server session.</summary>
 public sealed class UploadStore
@@ -102,6 +102,7 @@ public sealed class SolveJobManager
                 WithMaintenance = req.Maintenance,
                 RegionalPolish = req.Regional,
                 RegionalPairs = req.Pairs,
+                DualStabilization = req.Stabilize,
             });
             var lastEvent = DateTime.MinValue;
             designer.Progress += p =>
@@ -162,6 +163,7 @@ public sealed class SolveJobManager
                 GapTarget = job.Request.GapTarget,
                 TimeLimitSeconds = job.Request.TimeLimitSeconds,
                 MipHeuristicTimeLimit = Math.Max(20, job.Request.TimeLimitSeconds * 0.3),
+                ColGen = new ColGenOptions { DualStabilization = job.Request.Stabilize },
             });
             var lastEvent = DateTime.MinValue;
             bpc.Progress += p =>

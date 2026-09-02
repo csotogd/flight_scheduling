@@ -36,6 +36,7 @@
         <label title="Enforce A-check maintenance in rotations"><input id="maintenance" type="checkbox"> maintenance</label>
         <label title="Split mode: after the solve, freeze the world and re-optimize one hub region at a time — merges are accepted only when the globally verified profit improves. Off = one whole-network solve only."><input id="regional" type="checkbox"> regional split</label>
         <label title="Also run cross-region PAIR passes (the relay): cross demand enters the pair block whole, with exact windows. Measured on RLA: clean but no extra profit at 3x contracting — worth trying on world-scale scenarios or cheaper recourse."><input id="regionalPairs" type="checkbox"> +pairs</label>
+        <label title="Dual stabilization (Wentges smoothing): damp early dual oscillation inside column generation so pricing stops chasing phantom prices. Mispricing-safe (true duals always have the last word; bounds only from true-dual passes). Worthwhile on large instances, neutral on small ones."><input id="stabilize" type="checkbox"> stabilize duals</label>
         <span id="sourceBadge" class="hidden badge">Excel: <b id="sourceName"></b>
           <button id="sourceClear" class="small" title="Back to the generated scenario">×</button></span>
       </div>

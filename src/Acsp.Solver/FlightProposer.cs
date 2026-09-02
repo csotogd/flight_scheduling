@@ -48,20 +48,14 @@ public static class FlightProposer
     {
         var pricer = new PathPricer(inst);
         var allowAll = PricingRestrictions.AllowAll(inst);
-        var probe = MasterDuals.Zero(inst);
-        bool Servable(PathPricer pr, PricingRestrictions rest, Od od)
-        {
-            probe.OdDemand[od.Id] = -1e9;
-            var found = pr.PriceOd(od, probe, rest);
-            probe.OdDemand[od.Id] = 0;
-            return found is not null;
-        }
 
         // demand at risk: O&Ds with unserved tonnes, split into unroutable (no feasible
-        // itinerary at all) and, optionally, crowded-out (routable but left on the ground)
+        // itinerary at all) and, optionally, crowded-out (routable but left on the ground).
+        // Each servability probe is an independent A* run — prewarm the shared bounds once,
+        // then probe one od per core with a thread-local dual vector
         double Unshipped(Od od) => od.Weight - (shippedByOd.Length > od.Id ? shippedByOd[od.Id] : 0);
         var unserved = inst.Ods.Where(od => Unshipped(od) > 1e-3).ToList();
-        var stranded = unserved.Where(od => !Servable(pricer, allowAll, od)).ToList();
+        var stranded = ProbeUnservable(inst, pricer, allowAll, unserved);
         double tonnesBefore = stranded.Sum(o => o.Weight);
         var strandedSet = new HashSet<int>(stranded.Select(o => o.Id));
 
@@ -447,22 +441,38 @@ public static class FlightProposer
         extended.Validate();
 
         // how much stranded demand becomes reachable?
-        var pricer2 = new PathPricer(extended);
-        var allowAll2 = PricingRestrictions.AllowAll(extended);
-        var probe2 = MasterDuals.Zero(extended);
-        int stillUnservable = 0;
-        double tonnesAfter = 0;
-        foreach (var od in stranded)
-        {
-            probe2.OdDemand[od.Id] = -1e9;
-            bool ok = pricer2.PriceOd(extended.Ods[od.Id], probe2, allowAll2) is not null;
-            probe2.OdDemand[od.Id] = 0;
-            if (!ok) { stillUnservable++; tonnesAfter += od.Weight; }
-        }
+        var still = ProbeUnservable(extended, new PathPricer(extended),
+            PricingRestrictions.AllowAll(extended),
+            stranded.Select(od => extended.Ods[od.Id]).ToList());
+        int stillUnservable = still.Count;
+        double tonnesAfter = still.Sum(od => od.Weight);
 
         return new Result(extended, proposals.Select(x => x.Info).ToList(),
             stranded.Count, stillUnservable, Math.Round(tonnesBefore, 1), Math.Round(tonnesAfter, 1),
             newKeys);
+    }
+
+    /// <summary>The ods of <paramref name="ods"/> with NO feasible itinerary at all: one
+    /// forced-priced A* probe per od, one od per core, thread-local dual vectors.</summary>
+    private static List<Od> ProbeUnservable(Instance inst, PathPricer pricer,
+        PricingRestrictions rest, List<Od> ods)
+    {
+        pricer.Prewarm();
+        var unservable = new bool[ods.Count];
+        Parallel.For(0, ods.Count,
+            () => MasterDuals.Zero(inst),
+            (i, _, probe) =>
+            {
+                probe.OdDemand[ods[i].Id] = -1e9; // make any path improving
+                unservable[i] = pricer.PriceOd(ods[i], probe, rest) is null;
+                probe.OdDemand[ods[i].Id] = 0;
+                return probe;
+            },
+            _ => { });
+        var res = new List<Od>();
+        for (int i = 0; i < ods.Count; i++)
+            if (unservable[i]) res.Add(ods[i]);
+        return res;
     }
 
     private static double HaversineKm(double lat1, double lon1, double lat2, double lon2)

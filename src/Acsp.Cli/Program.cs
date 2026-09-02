@@ -107,6 +107,7 @@ static int Design(string[] a)
         IncludeWaves = Flag(a, "waves"), // opt-in: measured no-effect on RLA (ALGORITHM.md)
         RegionalPolish = Flag(a, "regional"),
         RegionalPairs = Flag(a, "regional-pairs"),
+        DualStabilization = Flag(a, "stabilize"),
     };
     var designer = new NetworkDesigner(inst, opt);
     var lastReport = DateTime.MinValue;
@@ -358,7 +359,8 @@ static int SolveCmd(string[] a)
     bool mnt = Flag(a, "maintenance");
     double timeLimit = double.Parse(Opt(a, "time-limit", "1800"));
     double gap = double.Parse(Opt(a, "gap", "0.005"));
-    var res = RunOne(inst, mnt, timeLimit, gap, verbose: true, noHeuristic: Flag(a, "no-heuristic"));
+    var res = RunOne(inst, mnt, timeLimit, gap, verbose: true, noHeuristic: Flag(a, "no-heuristic"),
+        stabilize: Flag(a, "stabilize"), noParallel: Flag(a, "no-parallel-pricing"));
     string outDir = Opt(a, "out", "results");
     if (res.Best is not null)
     {
@@ -370,7 +372,7 @@ static int SolveCmd(string[] a)
 }
 
 static BpcResult RunOne(Instance inst, bool mnt, double timeLimit, double gap, bool verbose,
-    bool noHeuristic = false)
+    bool noHeuristic = false, bool stabilize = false, bool noParallel = false)
 {
     var bpc = new BranchAndPrice(inst, new BpcOptions
     {
@@ -380,6 +382,7 @@ static BpcResult RunOne(Instance inst, bool mnt, double timeLimit, double gap, b
         MipHeuristicFrequency = noHeuristic ? 0 : 40,
         // heuristic budget proportional to the solve budget (size-independent)
         MipHeuristicTimeLimit = Math.Max(20, timeLimit * 0.3),
+        ColGen = new ColGenOptions { DualStabilization = stabilize, ParallelPricing = !noParallel },
     });
     var lastReport = DateTime.MinValue;
     bpc.Progress += p =>

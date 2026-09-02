@@ -70,6 +70,9 @@ public sealed record DesignOptions
     public bool RegionalPolish { get; init; }
     /// <summary>Include cross-region pair passes (the relay) in the regional polish.</summary>
     public bool RegionalPairs { get; init; }
+    /// <summary>Dual stabilization (Wentges smoothing) inside every column generation:
+    /// worthwhile on large instances, neutral on small ones (mispricing-safe).</summary>
+    public bool DualStabilization { get; init; }
     public double GapTarget { get; init; } = 0.005;
     public bool WithMaintenance { get; init; }
     public string? LpBackend { get; init; }
@@ -527,6 +530,7 @@ public sealed class NetworkDesigner
             ColGenGapThreshold = _opt.ColGenGapThreshold,
             LocalBranching = _opt.LocalBranching,
             LocalBranchK = _opt.LocalBranchK,
+            ColGen = new ColGenOptions { DualStabilization = _opt.DualStabilization },
         });
         bpc.Progress += p => Progress?.Invoke(new DesignProgress(round, "solving", p));
         var res = bpc.Solve(ct);
