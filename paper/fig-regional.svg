@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 300" width="640">
+<line x1="52" x2="622" y1="218.2" y2="218.2" stroke="#e8e6df" stroke-width="1"/>
+<text x="46" y="222.2" fill="#6d7078" font-size="11.5" text-anchor="end" font-family="Helvetica,Arial,sans-serif">140</text>
+<line x1="52" x2="622" y1="182.5" y2="182.5" stroke="#e8e6df" stroke-width="1"/>
+<text x="46" y="186.5" fill="#6d7078" font-size="11.5" text-anchor="end" font-family="Helvetica,Arial,sans-serif">141</text>
+<line x1="52" x2="622" y1="146.7" y2="146.7" stroke="#e8e6df" stroke-width="1"/>
+<text x="46" y="150.7" fill="#6d7078" font-size="11.5" text-anchor="end" font-family="Helvetica,Arial,sans-serif">142</text>
+<line x1="52" x2="622" y1="111.0" y2="111.0" stroke="#e8e6df" stroke-width="1"/>
+<text x="46" y="115.0" fill="#6d7078" font-size="11.5" text-anchor="end" font-family="Helvetica,Arial,sans-serif">143</text>
+<line x1="52" x2="622" y1="75.2" y2="75.2" stroke="#e8e6df" stroke-width="1"/>
+<text x="46" y="79.2" fill="#6d7078" font-size="11.5" text-anchor="end" font-family="Helvetica,Arial,sans-serif">144</text>
+<line x1="52" x2="622" y1="39.5" y2="39.5" stroke="#e8e6df" stroke-width="1"/>
+<text x="46" y="43.5" fill="#6d7078" font-size="11.5" text-anchor="end" font-family="Helvetica,Arial,sans-serif">145</text>
+<text x="52.0" y="274" fill="#6d7078" font-size="11.5" text-anchor="middle" font-family="Helvetica,Arial,sans-serif">0</text>
+<text x="230.1" y="274" fill="#6d7078" font-size="11.5" text-anchor="middle" font-family="Helvetica,Arial,sans-serif">300</text>
+<text x="408.2" y="274" fill="#6d7078" font-size="11.5" text-anchor="middle" font-family="Helvetica,Arial,sans-serif">600</text>
+<text x="586.4" y="274" fill="#6d7078" font-size="11.5" text-anchor="middle" font-family="Helvetica,Arial,sans-serif">900</text>
+<text x="337.0" y="292" fill="#6d7078" font-size="12" text-anchor="middle" font-family="Helvetica,Arial,sans-serif">cycle wall-clock (s)</text>
+<line x1="52.0" x2="586.375" y1="227.5" y2="227.5" stroke="#c47c17" stroke-width="2.4"/>
+<text x="307.3125" y="244.5" fill="#c47c17" font-size="12.5" font-weight="bold" font-family="Helvetica,Arial,sans-serif">whole-network arm: +0 (verified to 5,400 s)</text>
+<path d="M 52.0 227.5 L 57.3 227.5 L 57.3 187.1 L 86.4 187.1 L 86.4 177.5 L 104.2 177.5 L 104.2 123.8 L 114.9 123.8 L 114.9 77.7 L 144.0 77.7 L 144.0 65.9 L 176.1 65.9 L 176.1 47.7 L 586.4 47.7 L 586.4 47.7 " fill="none" stroke="#178064" stroke-width="2.4"/>
+<circle cx="57.3" cy="187.1" r="4" fill="#178064" stroke="#ffffff" stroke-width="1.4"/>
+<circle cx="86.4" cy="177.5" r="4" fill="#178064" stroke="#ffffff" stroke-width="1.4"/>
+<circle cx="104.2" cy="123.8" r="4" fill="#178064" stroke="#ffffff" stroke-width="1.4"/>
+<circle cx="114.9" cy="77.7" r="4" fill="#178064" stroke="#ffffff" stroke-width="1.4"/>
+<circle cx="144.0" cy="65.9" r="4" fill="#178064" stroke="#ffffff" stroke-width="1.4"/>
+<circle cx="176.1" cy="47.7" r="4" fill="#178064" stroke="#ffffff" stroke-width="1.4"/>
+<text x="200.4375" y="37.7" fill="#178064" font-size="12.5" font-weight="bold" font-family="Helvetica,Arial,sans-serif">regional cycle: +5.03 M in 209 s, then honestly flat</text>
+<text x="12" y="14" fill="#6d7078" font-size="12" font-family="Helvetica,Arial,sans-serif">global profit (M, synthetic units)</text>
+</svg>

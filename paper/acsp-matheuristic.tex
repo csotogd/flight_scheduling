@@ -54,23 +54,43 @@ we state this and the road to a full experimental battery explicitly.
 
 \section{Introduction}
 
-Air cargo networks are planned in layers --- flight selection, fleet
-assignment, rotation planning, cargo routing --- that interact strongly:
-a flight is worth flying only if cargo can reach it, cargo can reach it only
-if rotations position an aircraft, and an aircraft is available only if the
-rest of the schedule releases it. Derigs and Friederichs
-\cite{derigs2013} formulated the integrated problem (\acsp{}) over a cyclic
-week, gave a path/string column formulation, and solved it by
+An express integrator sells a promise --- everything tendered tonight is
+delivered across the planet within days --- and keeps it with one of the
+most tightly coupled logistics systems in existence: hub-and-spoke networks
+whose feeders, overnight hub sorts, intercontinental trunks and morning
+distribution waves must interlock to the minute, flown by a heterogeneous
+fleet whose every aircraft chains through the week in a closed rotation.
+Planning such a network is traditionally cut into layers --- which flights
+to operate, which fleet flies each, how aircraft rotate, how shipments
+route --- optimized separately and reconciled by hand. The layers, however,
+interact strongly: a flight is worth operating only if cargo can reach it,
+cargo can reach it only if rotations position an aircraft, and an aircraft
+is free only if the rest of the schedule releases it. Sequential planning
+leaves structural money on the table, which is the classic argument for
+integrated optimization \cite{crainic2000,feng2015}.
+
+Derigs and Friederichs \cite{derigs2013} made that argument concrete for
+air cargo: they formulated the integrated problem (\acsp{}) over a cyclic
+week, gave a path/string column formulation, and solved it exactly by
 branch-and-price-and-cut (B\&P\&C) with problem-specific branching and
-implied-bound cuts, demonstrating the value of integration on four synthetic
-airline archetypes with up to a few thousand shipments.
+implied-bound cuts, on four synthetic airline archetypes with up to a few
+thousand shipments. A decade later that scale remains representative of
+the integrated-optimization literature, while the networks that would
+benefit most --- global integrators --- run an order of magnitude larger:
+tens of thousands of distinct origin--destination shipments per week over
+a thousand-plus flights. Figure~\ref{fig:map} shows the shape of the
+gap: at that scale, most of the network's \emph{shipments} are tiny and
+scattered, an anatomical fact that drives much of what follows.
 
 This paper asks an engineering question with methodological consequences:
-\emph{what does it take to keep that integrated optimization useful one
-order of magnitude higher}, at the scale of a global express integrator ---
-tens of thousands of shipments per week, a thousand-plus flights, a
-heterogeneous fleet --- and what parts of the exact machinery still earn
-their keep there?
+\emph{what does it take to keep integrated optimization useful one order
+of magnitude higher, and which parts of the exact machinery still earn
+their keep there?} The central empirical fact --- established twice,
+independently, in Section~\ref{sec:results:root} --- is that at
+integrator scale the \emph{integer} layer of the exact method stalls
+completely: from a good incumbent, ninety further minutes of whole-network
+branch-and-price explore one to three nodes and adopt nothing. Whatever
+progress is to be had must be organized differently.
 
 Our answers are empirical. We reimplemented the full method of
 \cite{derigs2013} (Section~\ref{sec:base}), generated instances from
@@ -84,6 +104,23 @@ supplies the three things heuristics cannot: feasible \emph{columns} for a
 timed, capacitated network; \emph{dual prices} that tell every heuristic
 where value lies; and \emph{valid bounds} that certify how much is left on
 the table.
+
+\paragraph{Position in the literature.} Each ingredient we use is
+individually established: local branching \cite{fischetti2003} and
+relaxation-induced neighborhoods \cite{danna2005} for integer moves;
+large-neighborhood search \cite{shaw1998,ropke2006} and fix-and-optimize
+\cite{helber2010} for structured decomposition; smoothed and stabilized
+column generation \cite{wentges1997,dumerle1999}; Farley-type bounds under
+truncation \cite{farley1990}. Air cargo operations at large have a rich
+literature \cite{feng2015,brandt2019}, but integrated
+schedule-plus-routing optimization at integrator scale has, to our
+knowledge, no published computational study. Our contribution is
+accordingly not a new component but a measured \emph{composition}: which
+of these instruments still work when the master holds thirty thousand
+commodities, how they must be adapted to a cyclic weekly schedule with
+rotation coupling (exact gateway windows, balance-repair partitions,
+monotone merges), and --- reported with equal prominence --- which
+plausible instruments do \emph{not} pay.
 
 \paragraph{Contributions.}
 \begin{enumerate}
@@ -131,7 +168,12 @@ single-seed, the instances are synthetic with AI-estimated parameters, and
 comparability with \cite{derigs2013} is qualitative because neither their
 instances nor their code were published. This preprint plants the system,
 the mechanisms and the measurement discipline; the multi-seed battery and an
-arc-flow baseline are the declared next step.
+arc-flow baseline are the declared next step. The remainder of the paper
+follows the pipeline: model and base algorithm (Sections~\ref{sec:base}%
+--\ref{sec:deliverall}), integer adoption and network design
+(Sections~\ref{sec:adoption}--\ref{sec:design}), geographic decomposition
+(Section~\ref{sec:regional}), engineering (Section~\ref{sec:engineering}),
+results and limitations (Sections~\ref{sec:results}--\ref{sec:limits}).
 
 \section{Problem and base algorithm}\label{sec:base}
 
@@ -169,6 +211,19 @@ mandatory, and 29{,}819 shipments). All parameters are AI-estimated for
 plausibility; no real airline data is used. Generators are deterministic in
 an integer seed and public. Table~\ref{tab:instances} summarizes the
 instance RLA-I-s1 used for the scale experiments.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{fig-map.pdf}
+\caption{The best full-demand schedule on RLA-I-s1, drawn to scale. Blue:
+mandatory flights (width $=$ load); green: adopted optional flights; amber,
+underneath: the 250 heaviest \emph{contracted} lanes (width $=$ tonnage)
+--- demand served by paid external carriers. The amber fans around the
+hubs are the 46.6\,M contracting bill of Section~\ref{sec:results:pipeline}
+made visible, and the target of the wave, relay and decomposition
+experiments.}
+\label{fig:map}
+\end{figure}
 
 \begin{table}[t]
 \centering\small
@@ -391,7 +446,7 @@ master's LP.
 
 \subsection{The adoption pipeline}\label{sec:results:pipeline}
 
-Table~\ref{tab:waterfall} shows the round-0 waterfall on the consolidated
+Table~\ref{tab:waterfall} and Figure~\ref{fig:waterfall} show the round-0 waterfall on the consolidated
 design model (25{,}451 demands after tiny-far consolidation). Each stage is
 enabled on top of the previous.
 
@@ -416,11 +471,22 @@ heuristic budget adopts nothing.}
 \label{tab:waterfall}
 \end{table}
 
+\begin{figure}[t]
+\centering
+\includegraphics[width=.8\textwidth]{fig-waterfall.pdf}
+\caption{The adoption pipeline of Section~\ref{sec:adoption} as a
+waterfall (data of Table~\ref{tab:waterfall}). Green segments are the
+increments each stage adds on top of the previous; the dashed line is the
+ablation --- the unrestricted restricted-master MIP, given the same budget
+as the ball, never leaves the loader's level.}
+\label{fig:waterfall}
+\end{figure}
+
 The best full-demand schedule obtained by the design pipeline alone reaches
 142.8\,M at a 9.9\% certified gap; in it, 22{,}011 of 29{,}819 shipments
 (46.0\,kt, a 46.6\,M bill) are contracted and only 58 of 154 aircraft fly.
 That anatomy --- a long tail of ${\sim}2$-tonne shipments scattered over
-${\sim}150$ stations --- motivates both the wave experiment (negative,
+${\sim}150$ stations, the amber fans of Figure~\ref{fig:map} --- motivates both the wave experiment (negative,
 below) and the decomposition (positive, next).
 
 \subsection{Geographic decomposition}\label{sec:results:regional}
@@ -450,6 +516,17 @@ includes learning visits \\
 adopt improvements in 4--50 seconds each.}
 \label{tab:regional}
 \end{table}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=.8\textwidth]{fig-regional.pdf}
+\caption{The clean A/B of Table~\ref{tab:regional}, over the cycle clock.
+Each dot is an accepted block merge (globally verified); the plateau after
+209\,s is the cycle reporting flat blocks rather than manufacturing noise.
+The whole-network arm, from the same incumbent, adopts nothing in
+5{,}400\,s.}
+\label{fig:regional}
+\end{figure}
 
 The mechanism, not just the outcome, matches the diagnosis: all four
 regions adopt on their first visit (from $+0.26$\,M to $+1.5$\,M each, in
