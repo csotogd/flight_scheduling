@@ -16,7 +16,8 @@ Schedule Optimization at Integrator Scale}
 
 \author{Carlos Soto\thanks{Independent researcher. Contact:
 \texttt{c.sotogd@gmail.com}. Code, instance generators and all experiment
-logs are available at the public repository accompanying this preprint.}}
+logs accompany this preprint; the repository URL will be added upon
+publication and is available from the author meanwhile.}}
 
 \date{September 2026 --- preprint}
 
@@ -44,7 +45,7 @@ regional improvement splices back into a globally verified schedule and the
 cycle is monotone by construction. Every component is toggleable and
 measured by ablation, including three negative results we report with equal
 prominence. On the integrator-scale instance the regional cycle gains
-4--5\,M of weekly profit in minutes of block time where the whole-network
+4--5\,M of weekly profit (synthetic currency units) in minutes of block time where the whole-network
 search gains nothing in ninety; parallelizing the pricing sweep reduces it
 from ${\sim}25$\,s to ${\sim}1$\,s per iteration and exposes the master LP
 re-solve as the next bottleneck. All results are single-seed and exploratory;
@@ -110,10 +111,13 @@ the table.
   verified \emph{global} schedule improves. An optional pairwise ``relay''
   re-opens cross-region demand with no cross-pass bookkeeping.
 \item A measured engineering layer (Section~\ref{sec:engineering}):
-  a bit-identical parallel pricing sweep, mispricing-safe dual smoothing
-  \cite{wentges1997,dumerle1999}, Farley-type bounds \cite{farley1990} under
-  truncation with a membership filter, and per-iteration cost breakdowns that
-  make the next bottleneck visible instead of guessed.
+  a bit-identical parallel pricing sweep, Farley-type bounds
+  \cite{farley1990} under truncation with a membership filter, and
+  per-iteration cost breakdowns that make the next bottleneck visible
+  instead of guessed. Mispricing-safe dual smoothing
+  \cite{wentges1997,dumerle1999} is implemented and correctness-verified;
+  its performance evaluation belongs to the planned battery and no benefit
+  is claimed here.
 \item An honest computational study (Section~\ref{sec:results}) on public,
   deterministic, regenerable instances, including three negative results:
   coordinated ``hub wave'' candidate bundles that the optimizer never
@@ -170,11 +174,11 @@ instance RLA-I-s1 used for the scale experiments.
 \centering\small
 \begin{tabular}{lr}
 \toprule
-airports / transfer hubs & 200 / 9 \\
+airports / transfer hubs & 150 / 9 \\
 fleets (aircraft) & 6 (154) \\
 flights in base schedule (mandatory / optional) & 1{,}250 (625 / 625) \\
 shipments (O\&D demands) & 29{,}819 \\
-total demand & ${\sim}178$\,kt/week \\
+total demand & ${\sim}62.7$\,kt/week \\
 service commitment & deliver-all (Section~\ref{sec:deliverall}) \\
 \bottomrule
 \end{tabular}
@@ -344,7 +348,10 @@ $\alpha \cdot \mathrm{center} + (1-\alpha)\cdot \mathrm{duals}$
 exactness: a smoothed pass that finds no columns triggers a re-price with
 the true duals before any conclusion, and validity-critical bounds are
 computed from true-dual passes only. A test asserts that the stabilized
-root converges to the same LP value as the plain one.
+root converges to the same LP value as the plain one. We report no
+performance numbers for smoothing: it is implemented, verified and off by
+default, and its evaluation is deliberately left to the multi-seed battery
+--- we flag this to avoid claiming a benefit we have not measured.
 
 \paragraph{Bounds under truncation.} Hard per-round budgets are made
 mathematically legal by a Farley-type bound \cite{farley1990}: on
@@ -397,13 +404,14 @@ stage & profit (M) & increment \\
 greedy cover seed (all demand contracted) & 129.9 & --- \\
 + seed flow loader (one warm LP over the pool) & 139.6 & $+9.7$ \\
 + local-branching ball $k{=}60$ & 142.3 & $+2.7$ \\
-+ adoption re-monetization (one warm LP) & 143.3--143.5 & $+1.0$ \\
++ adoption re-monetization (one warm LP) & 143.3 / 143.5 & $+1.0$ \\
 \midrule
 unrestricted restricted-master MIP, same budget & 139.6 & $+0.0$ \\
 \bottomrule
 \end{tabular}
 \caption{Round-0 incumbent waterfall on RLA-I-s1 (consolidated model,
-deliver-all). The last row is the ablation: without the ball, the same
+deliver-all). The re-monetization column shows two
+independent runs. The last row is the ablation: without the ball, the same
 heuristic budget adopts nothing.}
 \label{tab:waterfall}
 \end{table}
@@ -412,7 +420,7 @@ The best full-demand schedule obtained by the design pipeline alone reaches
 142.8\,M at a 9.9\% certified gap; in it, 22{,}011 of 29{,}819 shipments
 (46.0\,kt, a 46.6\,M bill) are contracted and only 58 of 154 aircraft fly.
 That anatomy --- a long tail of ${\sim}2$-tonne shipments scattered over
-${\sim}200$ stations --- motivates both the wave experiment (negative,
+${\sim}150$ stations --- motivates both the wave experiment (negative,
 below) and the decomposition (positive, next).
 
 \subsection{Geographic decomposition}\label{sec:results:regional}
@@ -467,10 +475,12 @@ not about the algorithms; both mechanisms remain in the code, disabled by
 default, for cheaper-recourse or larger-scale settings.
 
 \emph{LP method.} On the colgen master ($>40$k columns), CPLEX sifting ---
-nominally designed for column-heavy LPs --- measured $2$--$3\times$
+nominally suited to column-heavy LPs --- measured $2$--$3\times$
 \emph{slower} per re-solve (49--114\,s) than warm-started dual simplex
-(18--44\,s). Basis reuse across colgen iterations dominates the
-specialized method.
+(18--44\,s). The advantage of basis reuse across colgen iterations is
+well known; the value here is quantifying it for this master, since it
+rules out a drop-in remedy for the LP bottleneck of
+Section~\ref{sec:results:parallel}.
 
 \subsection{Parallel pricing and the next bottleneck}
 \label{sec:results:parallel}
