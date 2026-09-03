@@ -286,9 +286,9 @@ Full benchmark output lands in `results/RESULTS.md` when you run the benchmark l
 ```
 ├── README.md                ← you are here
 ├── ALGORITHM.md             ← full technical report (the paper's core + every addition, measured)
+├── paper/                   ← preprint manuscript (LaTeX + PDF + figures)
 ├── docs/
 │   └── branch-and-price.html← interactive visual explainer of the algorithm
-├── derigs2012.pdf           ← the paper
 ├── src/
 │   ├── Acsp.Core/           ← domain model + independent FeasibilityChecker
 │   ├── Acsp.Data/           ← generator, profiles, JSON, Excel round-trip
