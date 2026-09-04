@@ -6,6 +6,9 @@
 \usepackage{url}
 \usepackage[hidelinks]{hyperref}
 \usepackage{enumitem}
+\usepackage[ruled,vlined]{algorithm2e}
+\usepackage{amsthm}
+\newtheorem{proposition}{Proposition}
 \setlist{itemsep=2pt,topsep=4pt}
 
 \newcommand{\acsp}{ACSP}
@@ -254,9 +257,7 @@ Model \acsp{}-T is a path/string formulation over a time-space network:
 columns are cargo \emph{paths} (feasible timed itineraries for one O\&D) and
 flight \emph{strings} (fleet-assigned flight sequences; in the FARP-T
 variant used throughout this paper a string is a single flight and rotations
-are chained through ground arcs). Rows enforce demand limits, leg payload
-and volume capacities coupled to string selection, flight cover, per-fleet
-flow balance at timeline events, and fleet counts. Columns are priced by two
+are chained through ground arcs of the timeline). Columns are priced by two
 oracles: PRICE-P, a resource-constrained shortest path solved with
 A${}^{*}$; and PRICE-S for strings. Implied-bound cuts link flow to
 selection; problem-specific branching (flight in/out, fleet-flight,
@@ -264,6 +265,97 @@ follow-on) keeps both pricers intact. Without maintenance the procedure is
 exact. Our reimplementation follows the paper; every accepted incumbent is
 re-validated by an independent feasibility checker that shares no code with
 the solver.
+
+\subsection{The master problem, written down}\label{sec:model}
+
+Table~\ref{tab:notation} fixes notation; we state the restricted master in
+the form our solver actually builds, since every mechanism in
+Sections~\ref{sec:deliverall}--\ref{sec:regional} is defined as an operation
+on these rows and columns.
+
+\begin{table}[t]\centering\small
+\begin{tabular}{ll}
+\toprule
+\multicolumn{2}{l}{\emph{Sets}}\\
+$A$, $H\subseteq A$ & airports; transfer hubs \\
+$K$ & fleet types, $n_k$ aircraft of type $k$, volume capacity $V_k$ \\
+$F$ & flights: $F^{M}$ mandatory, $F^{O}$ optional, $F^{X}$ external \\
+$L$, $L_f$ & legs; legs of flight $f$ \\
+$Q$ & shipments (O\&D demands), $d_q$ tonnes, rate $r_q$, $\nu_q$ m$^3$/t \\
+$P_q$, $S$ & feasible cargo paths of $q$; feasible flight strings \\
+$\mathcal{E}$, $\mathcal{G}$ & timeline events; ground arcs \\
+\multicolumn{2}{l}{\emph{Parameters}}\\
+$W_k(l)$ & payload of fleet $k$ on leg $l$: the payload-range frontier
+  (Section~\ref{sec:base}) \\
+$m_p$ & margin of path $p$: $r_q$ minus variable, transfer and storage cost \\
+$c_s$, $\chi_s$ & cost of string $s$; aircraft-periods it consumes \\
+$\kappa_k$, $\varphi_f$ & fixed cost per aircraft of type $k$; booking cost of
+  external flight $f$ \\
+$\rho_q$ & contracted-delivery cost per tonne of $q$ (Section~\ref{sec:deliverall}) \\
+\multicolumn{2}{l}{\emph{Variables}}\\
+$y_p\ge 0$ & tonnes of $q$ routed on path $p\in P_q$ \\
+$x_s\in\{0,1\}$ & string $s$ selected \\
+$g_a\ge 0$ & flow on ground arc $a$ \\
+$b_f\in\{0,1\}$ & external flight $f$ booked \\
+$z_q\ge 0$ & tonnes of $q$ delivered by contracted carrier \\
+\bottomrule
+\end{tabular}
+\caption{Notation.}\label{tab:notation}
+\end{table}
+
+\begin{align}
+\max\;\; & \sum_{q\in Q}\sum_{p\in P_q} m_p\,y_p
+  + \sum_{q\in Q}(r_q-\rho_q)\,z_q
+  - \sum_{s\in S}\bigl(c_s+\chi_s\kappa_{k(s)}\bigr)x_s
+  \notag\\[-2pt]
+& \hspace{4.2em}
+  - \sum_{a\in\mathcal{G}}\chi_a\kappa_{k(a)}\,g_a
+  - \sum_{f\in F^{X}}\varphi_f\,b_f
+  \label{eq:obj}\\[2pt]
+\text{s.t.}\;\;
+& \sum_{p\in P_q} y_p + z_q = d_q,
+  \qquad\qquad\qquad\qquad\quad\; \forall q\in Q
+  \label{eq:demand}\\
+& \sum_{p\,:\,l\in p} y_p - \sum_{s\,:\,l\in s} W_{k(s)}(l)\,x_s
+  - \bar w_l\, b_{f(l)} \le 0,
+  \quad\;\, \forall l\in L
+  \label{eq:legw}\\
+& \sum_{p\,:\,l\in p} \nu_{q(p)}\,y_p - \sum_{s\,:\,l\in s} V_{k(s)}\,x_s
+  - \bar v_l\, b_{f(l)} \le 0,
+  \quad\;\;\, \forall l\in L
+  \label{eq:legv}\\
+& \sum_{s\,:\,f\in s} x_s = 1 \;\;\forall f\in F^{M},
+  \qquad
+  \sum_{s\,:\,f\in s} x_s \le 1 \;\;\forall f\in F^{O}
+  \label{eq:cover}\\
+& \sum_{s\in\delta^{+}(e)} x_s - \sum_{s\in\delta^{-}(e)} x_s
+  + \sum_{a\in\delta^{+}(e)} g_a - \sum_{a\in\delta^{-}(e)} g_a = 0,
+  \;\; \forall e\in\mathcal{E}
+  \label{eq:balance}\\
+& \sum_{s\,:\,k(s)=k}\chi_s x_s + \sum_{a\,:\,k(a)=k}\chi_a g_a \le n_k,
+  \qquad\quad\;\; \forall k\in K
+  \label{eq:fleet}\\
+& \sum_{p\in P_q\,:\,f\in p} y_p - d_q \sum_{s\,:\,f\in s} x_s \le 0,
+  \qquad\quad\;\;\, \forall (q,f)\in \mathcal{C}
+  \label{eq:ibc}
+\end{align}
+
+Objective~\eqref{eq:obj} is profit: path margins and contracted deliveries
+against string, aircraft, and external booking costs. Rows
+\eqref{eq:demand} are the demand rows --- equalities under deliver-all
+(Section~\ref{sec:deliverall}), $\le d_q$ otherwise, in which case $z_q$ is
+absent. Rows \eqref{eq:legw}--\eqref{eq:legv} couple cargo flow to capacity:
+a leg carries tonnage only if a string covers its flight, and the capacity
+offered is the payload-range frontier $W_{k}(l)$, which is a constant per
+$(l,k)$ and therefore keeps the coupling linear
+($\bar w_l,\bar v_l$ are the posted capacities of external legs). Rows
+\eqref{eq:cover} cover mandatory flights exactly once and optional flights at
+most once; \eqref{eq:balance} is per-fleet flow balance at timeline events,
+which is what makes selected strings chain into closed weekly rotations, and
+\eqref{eq:fleet} caps aircraft. Rows \eqref{eq:ibc} are the implied-bound
+cuts of \cite{derigs2013}, separated on the fly for the pairs
+$\mathcal{C}$ found violated. $P_q$ and $S$ are exponential and generated by
+pricing; the LP over the generated subset is the RMP throughout this paper.
 
 \paragraph{Instances.} We reimplemented the generation recipes of the four
 archetypes of \cite{derigs2013} (regional, international, mixed, express)
@@ -379,19 +471,88 @@ and later diagnosed a genuine economic no (Section~\ref{sec:results:neg}).
 \section{The autonomous design loop}\label{sec:design}
 
 The base algorithm assumes a human writes the optional-flight candidate
-list. Our design loop generates it: each round proposes a batch of candidate
-flights aimed at unserved demand (hub round trips, direct rotations,
-inter-hub trunks, premium external capacity), solves the extended instance
-with warm-started columns and a seeded incumbent, scores which candidates
-flew, and evicts persistent non-flyers (with amnesty). Two scale devices are
-toggleable: consolidation of tiny, far shipments into hub-corridor pseudo
-demands during the rounds (the final solve always runs on the original
-demand), and zone rotation of proposal targeting. We omit details for
-space; all of it is in the repository's technical report. One addition is a
-negative result we keep in the codebase, disabled: \emph{hub waves},
-coordinated feeder--trunk--distribution bundles proposed as a set for the
-long tail of scattered small shipments. The optimizer never adopted one
-(Section~\ref{sec:results:neg}).
+list; this section removes that assumption without enumerating the slot
+space. Each round, a proposer reads the previous solution's gaps ---
+unroutable demand and capacity-crowded shipments, ranked by revenue at risk
+--- and generates a batch from four classes:
+
+\begin{itemize}
+\item \emph{Hub round trips}, timed to stranded demand's availability
+  windows: a pickup toward the nearest hub, a delivery from it, proposed as a
+  coordinated pair when neither endpoint is itself a hub.
+\item \emph{Direct point-to-point rotations}, sampled without replacement
+  with probability proportional to proximity and to the pair's share of its
+  origin's unserved volume --- close, locally dominant flows are the ones a
+  direct can win.
+\item \emph{Inter-hub trunk shuttles}, aimed at aggregate cross-hub tonnage
+  after assigning every shipment's endpoints to their nearest hubs; these
+  feed all multi-hub itineraries at once and are therefore exempt from zone
+  filtering.
+\item \emph{Premium external capacity} as a last resort, for pairs no
+  own-fleet proposal reaches; the model books it only if the demand still
+  pays at that price.
+\end{itemize}
+
+Batch quotas keep lower-priority classes from being starved on dense
+instances, and deterministic keys (route plus departure bucket) deduplicate
+against everything alive or recently evicted. The extended instance is then
+re-solved with a warm-started column pool and the previous schedule seeded as
+incumbent --- so a round can never return less than its predecessor ---
+candidates are scored by whether they actually flew, and persistent
+non-flyers are evicted, which keeps the \emph{active} model bounded while the
+\emph{explored} candidate space grows without limit. Amnesty lets an evicted
+candidate return some rounds later, since the network context changes as
+accepted flights accumulate.
+
+Two scale devices are toggleable: consolidation of tiny, far shipments into
+hub-corridor pseudo demands during the rounds --- the final solve always runs
+on the original demand, so delivered schedules and profits stay exact --- and
+zone rotation of proposal targeting, so each hub cluster receives a full
+batch and local synergies land in the same round. Algorithm~\ref{alg:design}
+states the loop; full parameterization is in the repository's technical
+report. One further class is a negative result we keep in the codebase,
+disabled: \emph{hub waves}, coordinated feeder--trunk--distribution bundles
+proposed as a set for the long tail of scattered small shipments. The
+optimizer never adopted one (Section~\ref{sec:results:neg}).
+
+\begin{algorithm}[t]\small
+\SetKwInOut{Input}{input}\SetKwInOut{Output}{output}
+\Input{base instance $I_0$; batch size $B$; per-round budget; eviction window
+$\bar{e}$; flat-round limit $\bar{f}$}
+\Output{best schedule found, and the instance it flies on}
+$I \leftarrow I_0$;\quad $\sigma \leftarrow \textsc{GreedyCover}(I)$
+  \tcp*{feasible, flowless seed}
+$(\sigma,\Pi) \leftarrow \textsc{Solve}(I,\sigma,\emptyset)$
+  \tcp*{$\Pi$: generated column pool}
+$\sigma^\star \leftarrow \sigma$;\quad $\text{flat} \leftarrow 0$\;
+\For{$r=1,2,\dots$ \KwSty{while} $\text{flat} < \bar{f}$}{
+  $U \leftarrow$ unserved tonnage of $\sigma$ per shipment, ranked by revenue at
+    risk\;
+  $C \leftarrow \textsc{Propose}(I,U,B,\text{zone}(r),\text{blocked keys})$
+    \tcp*{hub / direct / trunk / external}
+  \lIf{$C = \emptyset$}{\KwSty{continue}, or stop after a full empty cycle}
+  $(\sigma^{+},\Pi) \leftarrow \textsc{Solve}(I \cup C,\ \sigma,\ \Pi)$
+    \tcp*{seeded incumbent, warm columns}
+  \lIf{$\sigma^{+} = \bot$}{drop $C$, prune $\Pi$ to $I$'s ids,
+    \KwSty{continue}}
+  mark each $c \in C$ flown in $\sigma^{+}$; evict candidates unflown for
+    $\bar{e}$ consecutive rounds\;
+  $I \leftarrow (I \cup C) \setminus \text{evicted}$;\quad remap $\Pi$ and
+    $\sigma^{+}$ to the new ids\;
+  \KwSty{log} $\bigl(\text{bound uplift of } C,\ \text{profit adopted}\bigr)$
+    \tcp*{promise vs.\ adoption}
+  \eIf{$\mathrm{profit}(\sigma^{+}) > \mathrm{profit}(\sigma^{\star})$}{
+    $\sigma^{\star} \leftarrow \sigma^{+}$;\quad $\text{flat} \leftarrow 0$\;
+  }{
+    $\text{flat} \leftarrow \text{flat} + 1$\;
+  }
+  $\sigma \leftarrow \sigma^{+}$\;
+}
+\Return{$\textsc{ExactFinal}(\sigma^{\star})$, solved on the full,
+unconsolidated demand}
+\caption{Autonomous design loop (Section~\ref{sec:design}).}
+\label{alg:design}
+\end{algorithm}
 
 \section{Geographic fix-and-optimize with exact gateway windows}
 \label{sec:regional}
@@ -439,17 +600,103 @@ reduction of $e_k$ for the next visit.
 schedule (frozen strings and flows kept; donated segments replaced;
 sub-contracted remainders fall back to global end-to-end contracting) and
 accepted \emph{only if} the independently verified global profit improves.
-The cycle can therefore never lose ground. During development this guard
-caught four distinct merge bugs --- double-counted multi-crossing segments,
-duplicated whole-region demands, unassemblable partitions, fleet-rounding
-violations --- without ever letting a corrupted schedule through; we
-consider it the load-bearing design decision of the whole section.
+The cycle can therefore never lose ground (Proposition~\ref{prop:monotone}).
+
+Algorithm~\ref{alg:block} states block construction and the cycle. Two
+properties make the scheme safe; both are immediate, and we state them
+because they are what a reader must be able to check.
+
+\begin{proposition}[Splice feasibility]\label{prop:splice}
+Let $\sigma$ be a globally feasible schedule and let a block be built as in
+Algorithm~\ref{alg:block}. If $\sigma_B$ is a feasible solution of the block
+instance, then every shipment of the merged schedule remains time-feasible:
+each donated segment is replaced by one whose elapsed time lies in
+$[\alpha,\beta]$, where $\alpha$ is the arrival of the frozen feeder plus the
+gateway transfer time and $\beta$ the departure of the frozen onward
+connection minus it, both read from $\sigma$'s unchanged timetable.
+\end{proposition}
+
+\begin{proof}
+Frozen flights keep their departure and arrival times, so $\alpha$ and $\beta$
+are unaffected by anything the block decides. A block shipment's release and
+deadline are set to exactly $\alpha$ and $\beta$ by construction, and
+$\sigma_B$ respects them; splicing therefore preserves every connection time
+on both sides of the gateway. Shipments crossing the region more than once,
+and degenerate cuts, are excluded from donation by the partition step, so
+each donated path receives exactly one replacement segment. \qed
+\end{proof}
+
+\begin{proposition}[Monotonicity]\label{prop:monotone}
+The regional cycle never decreases the global objective, and every schedule
+it returns is feasible for the original instance.
+\end{proposition}
+
+\begin{proof}
+A merged schedule is adopted only if it passes the independent feasibility
+check and strictly improves the globally recomputed objective; otherwise the
+incumbent is kept unchanged. Both statements are therefore loop invariants,
+and hold of the returned schedule in particular. \qed
+\end{proof}
+
+Proposition~\ref{prop:splice} is what the construction \emph{intends};
+Proposition~\ref{prop:monotone} is what the implementation \emph{guarantees}
+even when that intent is violated by a defect. Keeping both earned its
+keep: during development the guard rejected four distinct merge defects
+(Section~\ref{sec:results:regional}) without ever admitting a corrupted
+schedule.
 
 \paragraph{Pairwise relay.} Optionally, after the single-region passes of
 each cycle, \emph{pair} passes run on region unions ordered by open
 cross-tonnage. A cross-region shipment enters a pair block whole, with
 exact windows; feeder, trunk and distribution are decided in one model,
 avoiding any cross-pass ledger or estimated hand-off times.
+
+\begin{algorithm}[t]\small
+\SetKwInOut{Input}{input}\SetKwInOut{Output}{output}
+\Input{instance $I$, incumbent $\sigma$, regions $\mathcal{R}$, per-block and
+total budgets}
+\Output{a schedule at least as good as $\sigma$ (Proposition~\ref{prop:monotone})}
+$\text{shave} \leftarrow \mathbf{0}$
+  \tcp*{learned fleet corrections, per block}
+\ForEach{cycle, \KwSty{and} pass $R$ over $\mathcal{R}$ then over
+  cross-loaded region pairs}{
+  \tcc{partition: which flights may this block re-decide?}
+  $\mathcal{K} \leftarrow \{f \in F : \text{every leg of } f
+    \text{ lies inside } R\}$\;
+  \Repeat{$\mathcal{K}$ unchanged}{
+    \ForEach{$(\text{fleet},\text{airport})$ with unbalanced kept selected
+      strings}{freeze one contributing one-way string\;}
+    freeze the flights of flows crossing $R$ more than once, and of
+      degenerate cuts\;
+  }
+  \lIf{$\mathcal{K}$ contains no cargo flight}{\KwSty{continue}}
+  \tcc{demand: exact windows read from the frozen timetable}
+  \ForEach{shipment $q$}{
+    \uIf{both endpoints of $q$ lie in $R$}{
+      add $q$ whole, window shrunk by handling at both ends\;
+    }\ElseIf{$\sigma$ routes $q$ through $\mathcal{K}$ on exactly one run
+      $[s,e]$}{
+      add a sub-shipment for that run, with release $\alpha$ and deadline
+      $\beta$ as in Proposition~\ref{prop:splice}\;
+    }
+  }
+  $n^{B}_k \leftarrow n_k - \text{used}_k(\sigma) + \text{used}_k(\mathcal{K})
+    - \text{shave}_k[R]$ \tcp*{block fleet slice}
+  seed $\leftarrow$ kept strings and their flows; remainder contracted\;
+  $\sigma_B \leftarrow \textsc{Solve}(\text{block},\ \text{seed})$;\quad
+  $\sigma' \leftarrow \textsc{Merge}(\sigma,\sigma_B)$\;
+  \eIf{$\sigma'$ feasible \KwSty{and}
+    $\mathrm{profit}(\sigma') > \mathrm{profit}(\sigma)$}{
+    $\sigma \leftarrow \sigma'$\;
+  }{
+    \lIf{$\sigma'$ exceeds fleet $k$ by $e_k$ aircraft}{
+      $\text{shave}_k[R] \leftarrow \max(\text{shave}_k[R],\, e_k)$}
+  }
+}
+\Return{$\sigma$}
+\caption{Geographic fix-and-optimize cycle (Section~\ref{sec:regional}).}
+\label{alg:block}
+\end{algorithm}
 
 \section{Engineering for honest measurement}\label{sec:engineering}
 
