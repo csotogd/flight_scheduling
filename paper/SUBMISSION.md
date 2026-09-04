@@ -70,6 +70,12 @@ https://github.com/csotogd/flight_scheduling
 
 ## Before you press submit
 
+- [ ] **Get and read Transportation Research Part B vol. 209 (2026), "Joint fleet
+      scheduling and cargo flow allocation for air cargo services"** — the closest
+      concurrent work (integrated cargo flight scheduling + fleet routing + cargo
+      allocation, column-generation heuristic, industry data). Paywalled; the
+      author list could not be retrieved. It must be cited and positioned against
+      before this goes to any journal, and ideally before the preprint.
 - [ ] Read the PDF end to end yourself — it goes out under your name.
 - [x] ORCID: 0009-0004-0176-427X (already in the paper's author footnote).
 - [ ] Confirm you are comfortable with the AI-assistance disclosure as written

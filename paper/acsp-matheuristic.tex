@@ -19,7 +19,9 @@ ORCID \href{https://orcid.org/0009-0004-0176-427X}{0009-0004-0176-427X}.
 Contact: \texttt{c.sotogd@gmail.com}. Code, instance generators and all
 experiment logs: \url{https://github.com/csotogd/flight_scheduling}.}}
 
-\date{September 2026 --- preprint}
+\date{September 2026 --- preprint\\[6pt]
+{\normalsize Code, instance generators and experiment logs:
+\url{https://github.com/csotogd/flight_scheduling}}}
 
 \begin{document}
 \maketitle
@@ -116,14 +118,27 @@ the table.
 \paragraph{Related work: the application.} Air cargo operations have a
 rich literature --- see the reviews of Feng et al.\ \cite{feng2015} on
 operations and Brandt and Nickel \cite{brandt2019} on load planning ---
-but it overwhelmingly treats the planning layers separately, in the
+but it has traditionally treated the planning layers separately, in the
 tradition of service network design \cite{crainic2000}: flight scheduling,
-fleet assignment, routing, each with its own models. The integrated
-formulation of \cite{derigs2013} is, to our knowledge, still the reference
-point for joint optimization of all four layers over a cyclic week, and no
-published computational study takes it --- or any comparable integrated
-model --- to integrator scale, nor removes the planner-written candidate
-list it presupposes. Those are the two gaps this paper addresses.
+fleet assignment, routing, each with its own models. Integrated air cargo
+optimization has become notably more active since: Zheng et al.
+\cite{zheng2023} plan and schedule cargo networks under minimum-stay-time
+constraints with a matrix-based ALNS metaheuristic; Huang et al.
+\cite{huang2023} integrate aircraft and cargo \emph{recovery} through a
+machine-learning-guided column-and-row generation on real carrier data; and
+joint fleet-scheduling and cargo-flow-allocation models solved by
+column-generation heuristics have appeared in the same period. The
+formulation of \cite{derigs2013} remains the reference point for joint
+optimization of all four planning layers over a \emph{cyclic week}.
+
+What we have not found in that literature is either of the two things this
+paper targets. First, every one of these approaches optimizes over a flight
+set the planner supplies; none \emph{generates and retires its own
+candidate flights}. Second, the reported computational studies stay one
+order of magnitude below the shipment counts of a global integrator, and
+none reports what happens to the integer layer there. Those are the two
+gaps this paper addresses --- and we state them as gaps in \emph{our}
+reading of the literature, not as a claim of exhaustive search.
 
 \paragraph{Related work: the instruments.} Methodologically we compose
 established components, each adapted to this problem's structure.
@@ -712,6 +727,16 @@ transportation. European Journal of Operational Research 122(2), 272--288
 \bibitem{feng2015} Feng, B., Li, Y., Shen, Z.-J.M.: Air cargo operations:
 literature review and comparison with practices. Transportation Research
 Part C: Emerging Technologies 56, 263--280 (2015).
+
+\bibitem{zheng2023} Zheng, H., Sun, H., Zhu, S., Kang, L., Wu, J.: Air cargo
+network planning and scheduling problem with minimum stay time: a
+matrix-based ALNS heuristic. Transportation Research Part C: Emerging
+Technologies 156, 104307 (2023).
+
+\bibitem{huang2023} Huang, L., Xiao, F., Zhou, J., Duan, Z., Zhang, H.,
+Liang, Z.: A machine learning based column-and-row generation approach for
+integrated air cargo recovery problem. Transportation Research Part B:
+Methodological 178 (2023).
 
 \bibitem{brandt2019} Brandt, F., Nickel, S.: The air cargo load planning
 problem --- a consolidated problem definition and literature review.
