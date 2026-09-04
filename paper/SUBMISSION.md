@@ -70,15 +70,25 @@ https://github.com/csotogd/flight_scheduling
 
 ## Before you press submit
 
-- [ ] **Get and read Transportation Research Part B vol. 209 (2026), "Joint fleet
-      scheduling and cargo flow allocation for air cargo services"** — the closest
-      concurrent work (integrated cargo flight scheduling + fleet routing + cargo
-      allocation, column-generation heuristic, industry data). Paywalled; the
-      author list could not be retrieved. It must be cited and positioned against
-      before this goes to any journal, and ideally before the preprint.
+- [x] Closest concurrent work read and positioned against: Zhu, Belieres, Hewitt
+      and Wu, Transportation Research Part B 209:103469 (2026). Cited, and the
+      three differences (horizon, candidate space, scale/evidence) are stated in
+      the related-work section; the absence of a head-to-head is a limitation.
+- [ ] Spot-check three references taken from that paper's bibliography rather
+      than from the sources themselves: Derigs et al. (2009), Xiao et al. (2022),
+      Yildiz and Savelsbergh (2022).
 - [ ] Read the PDF end to end yourself — it goes out under your name.
 - [x] ORCID: 0009-0004-0176-427X (already in the paper's author footnote).
 - [ ] Confirm you are comfortable with the AI-assistance disclosure as written
       (last section of the paper).
 - [ ] Optional: archive the repository on Zenodo for a code DOI, and cite that
       DOI in the paper's reproducibility section.
+
+## After it is posted
+
+- Put a reminder to update or withdraw the entry if a journal accepts it.
+- Planned v2 content, in order of value: the controlled scaling series within
+  one instance family (one night of compute; it would turn "the breakdown is
+  between 9k and 30k shipments, cause unattributed" into a measured curve);
+  the multi-seed battery with component ablations; an arc-flow MIP baseline;
+  mechanism figures and a managerial-insight section.
