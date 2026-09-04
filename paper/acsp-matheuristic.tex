@@ -89,7 +89,11 @@ discretized time-space network \cite{zhu2026} --- tractable on a
 24-airport, single-night network, but not over a hundred-plus stations and
 a periodic week, where the slot space explodes. Either way, the creative
 half of network design does not scale by itself. The second obstacle is
-empirical, and we establish it twice, independently, in
+empirical. It is not a gradual degradation: across our instance families
+the base method closes gaps under 2\% up to nine thousand shipments, and
+at GI scale needs a single branch-and-bound node to do so
+(Section~\ref{sec:results:tree}). One family further up, the picture
+changes qualitatively, and we establish it twice, independently, in
 Section~\ref{sec:results:root}:
 at integrator scale --- tens of thousands of distinct origin--destination
 shipments per week over a thousand-plus flights, an order of magnitude
@@ -745,10 +749,58 @@ battery over all instance families is the declared next step. All runs are
 reproducible from the public repository (deterministic seeds; every
 figure's raw log is committed).
 
+\subsection{Where the branch-and-bound tree earns its keep}
+\label{sec:results:tree}
+
+Before reporting what fails, we report where the base method works.
+Table~\ref{tab:tree} solves one instance of each family with the plain
+procedure (column generation, cuts, branching, restricted-master heuristic;
+no matheuristic layer) under a short budget.
+
+\begin{table}[t]
+\centering\small
+\begin{tabular}{lrrrrrr}
+\toprule
+instance & shipments & flights & nodes & gap & time (s) & termination \\
+\midrule
+RC-I  &    800 &   100 &      3 & 0.00\% &   0.1 & tree exhausted \\
+IC-I  &  3{,}500 &   310 &      1 & 0.00\% &   0.4 & tree exhausted \\
+MI-I  &  4{,}000 &   400 & 13{,}698 & 1.66\% & 180.0 & time limit \\
+EX-I  &  6{,}000 &   900 &  2{,}867 & 0.73\% & 180.0 & time limit \\
+GI-I  &  9{,}000 & 1{,}250 &      1 & 0.43\% &  97.6 & gap target \\
+\midrule
+RLA-I$^{\dagger}$ & 29{,}819 & 1{,}250 & 1--3 & 9.9\% & 5{,}400 & no improvement \\
+\bottomrule
+\end{tabular}
+\caption{The base branch-and-price-and-cut across instance families, short
+budgets, no matheuristic layer. $^{\dagger}$RLA is the deliver-all
+integrator instance of Table~\ref{tab:instances}, run inside the design
+pipeline (Section~\ref{sec:results:root}); it differs from the others in
+more than size.}
+\label{tab:tree}
+\end{table}
+
+Three regimes are visible. On the small families the LP relaxation is
+integral or nearly so and the tree closes in milliseconds. In the middle
+(MI, EX) the relaxation is genuinely fractional and the tree does the work
+it was designed for --- thousands of nodes, gaps under 2\%. At GI scale
+(9{,}000 shipments, 1{,}250 flights) the root relaxation is already good
+enough that \emph{one} node reaches a 0.43\% gap in 98 seconds: the tree is
+not failing there, it is unnecessary. Only at RLA scale does the picture
+change qualitatively.
+
+We stress what this table does \emph{not} establish. RLA differs from GI in
+more than shipment count --- it carries the deliver-all service commitment,
+gravity demand over 60\% of station pairs, nine hubs instead of four, and
+weekly lane recurrence --- so these measurements locate the breakdown
+between the two families without isolating its cause. A controlled scaling
+series over one family is the experiment that would, and it is not yet run.
+
 \subsection{The whole-network integer layer stalls}\label{sec:results:root}
 
-From a shared incumbent at 139.7--139.8\,M (produced by cover seed +
-loader), the whole-network solver --- warm-started column pool, seeded
+At RLA scale the regime of Table~\ref{tab:tree} changes. From a shared
+incumbent at 139.7--139.8\,M (produced by cover seed + loader), the
+whole-network solver --- warm-started column pool, seeded
 incumbent, escalating ball, 90-minute budget --- produced \emph{zero}
 incumbent improvements, twice (independent runs at 1{,}800\,s and
 5{,}400\,s produced the same $+0$). Branch-and-bound explored 1--3 nodes.
@@ -898,7 +950,10 @@ external baseline yet (e.g., a direct arc-flow MIP under equal budget);
 ``better than our own previous configuration'' is the only comparison this
 preprint supports. (v) The design loop is greedy across rounds; inner
 solves carry valid bounds, but no global optimality claim spans rounds.
-(vi) We do not compare against the concurrent model of \cite{zhu2026}: the
+(vi) The breakdown of Table~\ref{tab:tree} is located between two instance
+families that differ in several factors at once; a controlled scaling series
+within one family is needed to attribute it to size.
+(vii) We do not compare against the concurrent model of \cite{zhu2026}: the
 horizons differ (single night vs.\ periodic week) and neither instance set
 is expressible in the other's formulation without changing the problem, so a
 head-to-head would compare problems rather than methods.
