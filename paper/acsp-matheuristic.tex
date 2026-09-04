@@ -28,11 +28,11 @@ experiment logs: \url{https://github.com/csotogd/flight_scheduling}.}}
 
 \begin{abstract}
 Integrated airline schedule design --- which flights to operate, which fleet
-flies each, how aircraft rotate, how cargo routes --- remains
-planner-in-the-loop: state-of-the-art exact methods optimize over a
-candidate flight list that a human expert must write, and stall entirely at
-the scale of a global express integrator. Both facts are bottlenecks to
-automation. We present an approach that addresses them together, and a
+flies each, how aircraft rotate, how cargo routes --- faces two obstacles to
+automation at the scale of a global express integrator. The candidate flight
+space cannot be handed over by a planner nor enumerated exhaustively once the
+network spans a hundred-plus stations over a periodic week; and the integer
+layer of the exact method stalls entirely there. We present an approach that addresses them together, and a
 working system that measures it. Building on the branch-and-price-and-cut
 of Derigs and Friederichs (OR Spectrum 35:325--362, 2013), an autonomous
 design loop generates its own candidate flights round by round --- propose,
@@ -78,12 +78,16 @@ branch-and-price-and-cut (B\&P\&C) with problem-specific branching and
 implied-bound cuts, on four synthetic airline archetypes with up to a few
 thousand shipments.
 
-Yet even the integrated method keeps a human in its loop, in two distinct
-ways. The first is by design: under the ``pragmatic paradigm'' the model
-\emph{chooses from} a candidate flight list that an expert planner must
-write --- the creative half of network design stays manual, does not scale
-with the network, and cannot run unattended. The second is empirical, and
-we establish it twice, independently, in Section~\ref{sec:results:root}:
+Two obstacles stand between that method and unattended use at integrator
+scale. The first is the candidate space: under the ``pragmatic paradigm''
+the model \emph{chooses from} a flight list an expert planner must write.
+Recent work avoids the planner by enumerating every flight slot of a
+discretized time-space network \cite{zhu2026} --- tractable on a
+24-airport, single-night network, but not over a hundred-plus stations and
+a periodic week, where the slot space explodes. Either way, the creative
+half of network design does not scale by itself. The second obstacle is
+empirical, and we establish it twice, independently, in
+Section~\ref{sec:results:root}:
 at integrator scale --- tens of thousands of distinct origin--destination
 shipments per week over a thousand-plus flights, an order of magnitude
 above the literature's instances --- the \emph{integer} layer of the
@@ -115,30 +119,43 @@ timed, capacitated network; \emph{dual prices} that tell every heuristic
 where value lies; and \emph{valid bounds} that certify how much is left on
 the table.
 
-\paragraph{Related work: the application.} Air cargo operations have a
-rich literature --- see the reviews of Feng et al.\ \cite{feng2015} on
-operations and Brandt and Nickel \cite{brandt2019} on load planning ---
-but it has traditionally treated the planning layers separately, in the
-tradition of service network design \cite{crainic2000}: flight scheduling,
-fleet assignment, routing, each with its own models. Integrated air cargo
-optimization has become notably more active since: Zheng et al.
-\cite{zheng2023} plan and schedule cargo networks under minimum-stay-time
-constraints with a matrix-based ALNS metaheuristic; Huang et al.
-\cite{huang2023} integrate aircraft and cargo \emph{recovery} through a
-machine-learning-guided column-and-row generation on real carrier data; and
-joint fleet-scheduling and cargo-flow-allocation models solved by
-column-generation heuristics have appeared in the same period. The
-formulation of \cite{derigs2013} remains the reference point for joint
-optimization of all four planning layers over a \emph{cyclic week}.
+\paragraph{Related work: the application.} Air cargo operations have a rich
+literature --- see the reviews of Feng et al.\ \cite{feng2015} and Brandt and
+Nickel \cite{brandt2019} --- and the planning layers have traditionally been
+treated separately, in the tradition of service network design
+\cite{crainic2000}. Integrated formulations have a lineage of their own:
+Derigs et al.\ \cite{derigs2009} combine flight selection with rotation
+planning; Derigs and Friederichs \cite{derigs2013} add fleet assignment and
+solve the cyclic-week problem exactly by B\&P\&C; Xiao et al.\
+\cite{xiao2022} integrate tail assignment and cargo routing with
+through-cargo connections; Y{\i}ld{\i}z and Savelsbergh \cite{yildiz2022}
+optimize package express operations with single-flight shipments; Zheng
+et al.\ \cite{zheng2023} add hub stay times with an ALNS metaheuristic; and
+Huang et al.\ \cite{huang2023} recover disrupted cargo schedules with
+machine-learning-guided column-and-row generation.
 
-What we have not found in that literature is either of the two things this
-paper targets. First, every one of these approaches optimizes over a flight
-set the planner supplies; none \emph{generates and retires its own
-candidate flights}. Second, the reported computational studies stay one
-order of magnitude below the shipment counts of a global integrator, and
-none reports what happens to the integer layer there. Those are the two
-gaps this paper addresses --- and we state them as gaps in \emph{our}
-reading of the literature, not as a claim of exhaustive search.
+The closest work to ours is concurrent. Zhu et al.\ \cite{zhu2026} jointly
+determine cargo flight schedules, fleet routes and cargo allocation ---
+including leased belly capacity and through-cargo connections --- and solve
+the result with a column-generation heuristic that finishes on a restricted
+MIP over an expanded route pool, validated on data from an industry partner.
+Our work shares that overall shape (an integrated route-based model, column
+generation, a restricted-master finish) and we claim no priority over it.
+Three differences frame what we add. (i) \emph{Horizon}: their model spans a
+single overnight window with aircraft routes of at most three flights; ours
+is a periodic week in which rotations chain across the entire horizon, which
+is precisely what forces the balance-repair and fleet-slicing machinery of
+Section~\ref{sec:regional}. (ii) \emph{Candidate space}: they too need no
+planner-written list --- they enumerate every flight slot of a discretized
+time-space network --- but that enumeration is tractable because their
+networks span 24 airports and 257 commodities; over 150 airports and 29{,}819
+weekly shipments it is not, so the candidate space must instead be
+\emph{sampled adaptively}, which is what the design loop of
+Section~\ref{sec:design} does. (iii) \emph{Scale and evidence}: their
+large-scale instances carry 257 commodities and a 41--54 aircraft fleet, two
+orders of magnitude below the shipment counts we target; conversely they
+report real operational data and CPLEX and Benders baselines, all three of
+which we lack and list among our limitations (Section~\ref{sec:limits}).
 
 \paragraph{Related work: the instruments.} Methodologically we compose
 established components, each adapted to this problem's structure.
@@ -165,12 +182,13 @@ instruments do \emph{not} pay.
 
 \paragraph{Contributions.}
 \begin{enumerate}
-\item An \emph{autonomous design loop} (Section~\ref{sec:design}) that
-  removes the planner-written candidate list: four generator classes aimed
-  at unserved demand, per-round solve--score--evict with amnesty, and the
-  scale devices (demand consolidation, zone rotation) that keep rounds
-  tractable --- so the integrated model designs the network unattended and
-  the planner reviews the result.
+\item An \emph{autonomous design loop} (Section~\ref{sec:design}) for a
+  candidate space too large to enumerate: four demand-driven generator
+  classes, per-round solve--score--evict with amnesty, and the scale devices
+  (demand consolidation, zone rotation) that keep rounds tractable --- so the
+  active model stays bounded while the explored candidate space grows without
+  limit, the integrated model designs the network unattended, and the planner
+  reviews the result.
 \item A \emph{deliver-all} service model for integrators
   (Section~\ref{sec:deliverall}): demand rows become equalities and every
   shipment carries an always-available contracted-delivery column priced at a
@@ -633,6 +651,10 @@ external baseline yet (e.g., a direct arc-flow MIP under equal budget);
 ``better than our own previous configuration'' is the only comparison this
 preprint supports. (v) The design loop is greedy across rounds; inner
 solves carry valid bounds, but no global optimality claim spans rounds.
+(vi) We do not compare against the concurrent model of \cite{zhu2026}: the
+horizons differ (single night vs.\ periodic week) and neither instance set
+is expressible in the other's formulation without changing the problem, so a
+head-to-head would compare problems rather than methods.
 
 \section{Conclusions and road map}\label{sec:conclusions}
 
@@ -728,6 +750,23 @@ transportation. European Journal of Operational Research 122(2), 272--288
 literature review and comparison with practices. Transportation Research
 Part C: Emerging Technologies 56, 263--280 (2015).
 
+\bibitem{zhu2026} Zhu, L., Belieres, S., Hewitt, M., Wu, L.: Joint fleet
+scheduling and cargo flow allocation for air cargo services. Transportation
+Research Part B: Methodological 209, 103469 (2026).
+
+\bibitem{derigs2009} Derigs, U., Friederichs, S., Sch\"afer, S.: A new
+approach for air cargo network planning. Transportation Science 43(3),
+370--380 (2009).
+
+\bibitem{xiao2022} Xiao, F., Guo, S., Huang, L., Huang, L., Liang, Z.:
+Integrated aircraft tail assignment and cargo routing problem with through
+cargo consideration. Transportation Research Part B: Methodological 162,
+328--351 (2022).
+
+\bibitem{yildiz2022} Y{\i}ld{\i}z, B., Savelsbergh, M.: Optimizing package
+express operations in China. European Journal of Operational Research 300(1),
+320--335 (2022).
+
 \bibitem{zheng2023} Zheng, H., Sun, H., Zhu, S., Kang, L., Wu, J.: Air cargo
 network planning and scheduling problem with minimum stay time: a
 matrix-based ALNS heuristic. Transportation Research Part C: Emerging
@@ -736,7 +775,7 @@ Technologies 156, 104307 (2023).
 \bibitem{huang2023} Huang, L., Xiao, F., Zhou, J., Duan, Z., Zhang, H.,
 Liang, Z.: A machine learning based column-and-row generation approach for
 integrated air cargo recovery problem. Transportation Research Part B:
-Methodological 178 (2023).
+Methodological 178, 102846 (2023).
 
 \bibitem{brandt2019} Brandt, F., Nickel, S.: The air cargo load planning
 problem --- a consolidated problem definition and literature review.
