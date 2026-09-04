@@ -12,7 +12,7 @@ Branch-and-Price at Integrator Scale
 
 ## Authors
 
-Carlos Soto (Independent researcher)
+Carlos Soto García Delgado (Independent researcher)
 ORCID: 0009-0004-0176-427X
 
 ## Abstract (plain text)
