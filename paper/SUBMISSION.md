@@ -13,6 +13,7 @@ Branch-and-Price at Integrator Scale
 ## Authors
 
 Carlos Soto (Independent researcher)
+ORCID: 0009-0004-0176-427X
 
 ## Abstract (plain text)
 
@@ -70,8 +71,7 @@ https://github.com/csotogd/flight_scheduling
 ## Before you press submit
 
 - [ ] Read the PDF end to end yourself — it goes out under your name.
-- [ ] Get an ORCID (orcid.org, free, two minutes) — it substitutes for an
-      institutional affiliation as a verifiable identity.
+- [x] ORCID: 0009-0004-0176-427X (already in the paper's author footnote).
 - [ ] Confirm you are comfortable with the AI-assistance disclosure as written
       (last section of the paper).
 - [ ] Optional: archive the repository on Zenodo for a code DOI, and cite that
