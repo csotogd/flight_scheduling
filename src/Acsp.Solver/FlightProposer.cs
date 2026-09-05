@@ -435,6 +435,7 @@ public static class FlightProposer
         {
             Name = inst.Name.EndsWith("+prop") ? inst.Name : inst.Name + "+prop",
             Period = inst.Period, DeliverAll = inst.DeliverAll,
+            CargoHandlingMinutes = inst.CargoHandlingMinutes,
             Airports = inst.Airports, Fleets = inst.Fleets,
             Legs = [.. legs], Flights = [.. flights], Ods = inst.Ods,
         };

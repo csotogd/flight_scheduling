@@ -51,7 +51,8 @@ public sealed record BpcResult(
     Solution? Best, double Objective, double Bound, double Gap,
     double FirstIncumbentObjective, double FirstIncumbentSeconds,
     int NodesExplored, double ElapsedSeconds, bool Exact, string StopReason,
-    List<CargoPath>? PathPool = null, List<FlightString>? StringPool = null);
+    List<CargoPath>? PathPool = null, List<FlightString>? StringPool = null,
+    bool BoundCertified = false);
 
 /// <summary>
 /// The branch and price and cut procedure of §5 (Fig. 3): depth-first branch and bound
@@ -90,6 +91,10 @@ public sealed class BranchAndPrice
         double rootBound = double.PositiveInfinity;
         int nodesExplored = 0;
         string stopReason = "tree exhausted";
+        // the final bound is certified only if EVERY node bound that could have fed it
+        // (via rootBound, inherited bounds or prunings) was certified; +inf node bounds
+        // are trivially valid and do not poison the conjunction
+        bool boundCertified = true;
 
         colgen.IterationProgress += (iter, obj, added) =>
             Progress?.Invoke(new BpcProgress(nodesExplored, -1, incumbent, obj,
@@ -174,6 +179,8 @@ public sealed class BranchAndPrice
                 hardDeadline: () =>
                     sw.Elapsed.TotalSeconds > _opt.TimeLimitSeconds * _opt.ColGenHardFactor);
             nodesExplored++;
+            boundCertified &= result.BoundCertified
+                || double.IsPositiveInfinity(result.DualBound);
             var lp = result.Lp;
             // when column generation was cut off by the deadline, lp.Objective is not a valid
             // bound (improving columns may remain) — the Farley bound in DualBound is
@@ -279,6 +286,7 @@ public sealed class BranchAndPrice
         return new BpcResult(best, incumbent, finalBound, Gap(incumbent, finalBound),
             firstIncObj, firstIncTime, nodesExplored, sw.Elapsed.TotalSeconds, exact, stopReason,
             _opt.CollectColumnPool ? rmp.Paths.Select(pc => pc.Path).ToList() : null,
-            _opt.CollectColumnPool ? rmp.Strings.Select(sc => sc.Str).ToList() : null);
+            _opt.CollectColumnPool ? rmp.Strings.Select(sc => sc.Str).ToList() : null,
+            BoundCertified: boundCertified);
     }
 }

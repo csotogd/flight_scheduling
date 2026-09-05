@@ -117,9 +117,14 @@ public sealed class PathPricer
         return (cost, time);
     }
 
-    private readonly record struct Label(int Leg, double Cost, int Time, int Pred);
+    private readonly record struct Label(int Leg, double Cost, int Time, int Pred, int Mask = 0);
 
     public sealed record PricedPath(CargoPath Path, double ReducedCost);
+
+    /// <summary>Total labels a single bound-pass od search may create before aborting as
+    /// incomplete (that od's Farley term is then not certified). Guards against pathological
+    /// label growth once the per-node cap is lifted.</summary>
+    private const int BoundPassLabelBudget = 2_000_000;
 
     /// <summary>
     /// Prices all O&amp;Ds and returns the best improving path per O&amp;D (reduced cost &gt; eps).
@@ -159,9 +164,48 @@ public sealed class PathPricer
         for (int i = 0; i < missing.Length; i++) _bounds[missing[i]] = computed[i];
     }
 
+    /// <summary>
+    /// Bound pass over every od: PRICE-P with the per-node label cap lifted and
+    /// implied-bound-cut duals charged exactly once per distinct flight (positive duals via
+    /// a per-label cut bitmask that also sharpens dominance; nonpositive or overflow duals
+    /// charged optimistically). For every concrete path the computed cost is at most the
+    /// master's cost of that column (Rmp.AddPath), so the returned per-od reduced cost is an
+    /// UPPER bound on the true best reduced cost over all feasible paths of that od —
+    /// exactly what a valid Farley term needs — and coincides with it in the ordinary case
+    /// (no cut-dual overflow, no reentry). Complete is false when some od aborted on the
+    /// label budget or a capacity dual came back negative (the A* guidance is then not
+    /// provably admissible) — the caller must treat the resulting bound as NOT certified.
+    /// </summary>
+    public (List<PricedPath> Paths, bool Complete) PriceBound(MasterDuals duals,
+        PricingRestrictions rest, double eps = 1e-6)
+    {
+        bool complete = true;
+        foreach (var leg in _inst.Legs)
+            if (duals.LegWeight[leg.Id] < -1e-9 || duals.LegVolume[leg.Id] < -1e-9)
+            { complete = false; break; }
+        Prewarm();
+        var results = new PricedPath?[_inst.Ods.Length];
+        var odComplete = new bool[_inst.Ods.Length];
+        Parallel.For(0, _inst.Ods.Length, Par(),
+            i => results[i] = PriceOdCore(_inst.Ods[i], duals, rest, eps,
+                useDijkstraOnly: false, boundPass: true, out odComplete[i]));
+        var list = new List<PricedPath>();
+        for (int i = 0; i < results.Length; i++)
+        {
+            if (results[i] is not null) list.Add(results[i]!);
+            complete &= odComplete[i];
+        }
+        return (list, complete);
+    }
+
     public PricedPath? PriceOd(Od od, MasterDuals duals, PricingRestrictions rest,
         double eps = 1e-6, bool useDijkstraOnly = false)
+        => PriceOdCore(od, duals, rest, eps, useDijkstraOnly, boundPass: false, out _);
+
+    private PricedPath? PriceOdCore(Od od, MasterDuals duals, PricingRestrictions rest,
+        double eps, bool useDijkstraOnly, bool boundPass, out bool complete)
     {
+        complete = true;
         var p = _inst.Period;
         var (hCost, hTime) = BoundsTo(od.Destination);
         double target = od.Rate - duals.OdDemand[od.Id]; // must exceed path cost + eps
@@ -176,13 +220,30 @@ public sealed class PathPricer
                        + od.VolumePerTonne * duals.LegVolume[leg.Id];
             return c;
         }
-        double EntryCost(Leg leg)
+        // bound pass: the master charges a path pi once per DISTINCT flight (Rmp.AddPath),
+        // while the labeling sees flight entries. Positive duals are charged exactly once via
+        // a per-label bitmask over the od's cut flights (a keeper label then only dominates a
+        // newcomer when it has already charged a SUPERSET of the newcomer's cuts — any
+        // completion costs it no more); a nonpositive dual would need the opposite inclusion,
+        // so it is credited per entry, which can only over-credit reentry paths — the rc
+        // stays an upper bound. Beyond 30 tracked cuts the excess is charged 0 (optimistic).
+        var cutBit = new Dictionary<int, int>(); // flight id -> bit index (pi > 0 only)
+        var cutPi = new List<double>();
+        if (boundPass)
+            foreach (var ((odId, fid), pi) in duals.ImpliedBoundCuts)
+                if (odId == od.Id && pi > 0 && cutPi.Count < 30)
+                { cutBit[fid] = cutPi.Count; cutPi.Add(pi); }
+
+        (double Cost, int Mask) Enter(Leg leg, int mask)
         {
             var f = _inst.Flights[leg.FlightId];
-            if (f.IsOptionalCargo &&
-                duals.ImpliedBoundCuts.TryGetValue((od.Id, f.Id), out double pi))
-                return pi;
-            return 0;
+            if (!f.IsOptionalCargo) return (0, mask);
+            if (!duals.ImpliedBoundCuts.TryGetValue((od.Id, f.Id), out double pi))
+                return (0, mask);
+            if (!boundPass) return (pi, mask);
+            if (cutBit.TryGetValue(f.Id, out int bi))
+                return (mask & (1 << bi)) != 0 ? (0.0, mask) : (cutPi[bi], mask | (1 << bi));
+            return (Math.Min(pi, 0), mask);
         }
 
         var labels = new List<Label>();
@@ -201,10 +262,12 @@ public sealed class PathPricer
             foreach (var idx in list)
             {
                 var ex = labels[idx];
-                if (ex.Cost <= lab.Cost + 1e-12 && ex.Time <= lab.Time) return;
+                if (ex.Cost <= lab.Cost + 1e-12 && ex.Time <= lab.Time
+                    && (ex.Mask & lab.Mask) == lab.Mask) return;
             }
-            list.RemoveAll(idx => labels[idx].Cost >= lab.Cost - 1e-12 && labels[idx].Time >= lab.Time);
-            if (list.Count >= _maxLabelsPerNode) return;
+            list.RemoveAll(idx => labels[idx].Cost >= lab.Cost - 1e-12 && labels[idx].Time >= lab.Time
+                && (lab.Mask & labels[idx].Mask) == labels[idx].Mask);
+            if (!boundPass && list.Count >= _maxLabelsPerNode) return;
             labels.Add(lab);
             list.Add(labels.Count - 1);
             double h = useDijkstraOnly ? 0 : hCost[lab.Leg];
@@ -218,11 +281,13 @@ public sealed class PathPricer
             int wait = p.Time(od.Avail, leg.Dep);
             if (wait < handling) wait += p.N; // still loading: catch next week's departure
             int t = wait + leg.BlockTime(p);
-            Push(new Label(leg.Id, NodeCost(leg) + EntryCost(leg), t, -1));
+            var (ec, m) = Enter(leg, 0);
+            Push(new Label(leg.Id, NodeCost(leg) + ec, t, -1, m));
         }
 
         while (pq.TryDequeue(out int li, out double prio))
         {
+            if (boundPass && labels.Count > BoundPassLabelBudget) { complete = false; break; }
             var lab = labels[li];
             if (prio >= bestCost) break;             // A*: cannot improve anymore
             if (prio >= target - eps) break;         // no positive reduced cost reachable
@@ -236,9 +301,10 @@ public sealed class PathPricer
             {
                 if (!rest.LegVisible[arc.To]) continue;
                 var next = _inst.Legs[arc.To];
-                double c = lab.Cost + arc.Cost + NodeCost(next) + (arc.Transfer ? EntryCost(next) : 0);
+                var (ec, m) = arc.Transfer ? Enter(next, lab.Mask) : (0.0, lab.Mask);
+                double c = lab.Cost + arc.Cost + NodeCost(next) + ec;
                 int t = lab.Time + arc.Time + next.BlockTime(p);
-                Push(new Label(arc.To, c, t, li));
+                Push(new Label(arc.To, c, t, li, m));
             }
         }
 

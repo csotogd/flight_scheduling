@@ -65,12 +65,17 @@ public sealed class ColumnGeneration
 
     /// <param name="DeadlineHit">Column generation was interrupted by the caller's deadline;
     /// Lp.Objective is then NOT a valid dual bound — use DualBound instead.</param>
-    /// <param name="DualBound">Valid upper bound on the true node LP: the converged LP value,
-    /// or on deadline the Farley bound LP + sum(d_od·rc_od+) + sum(n_k·rc_k+) computed from
-    /// the last full pricing pass (approximate when string pricing is label-limited, as
-    /// everywhere else with maintenance).</param>
+    /// <param name="DualBound">Upper bound on the true node LP: a Farley bound whose path
+    /// term comes from an uncapped bound pass of PRICE-P (<see cref="PathPricer.PriceBound"/>)
+    /// and whose string term is vacuous without maintenance (every feasible string is a
+    /// pre-seeded single flight) or a flight-cover aggregation with maintenance.</param>
+    /// <param name="BoundCertified">True when every ingredient of DualBound is provably valid:
+    /// the bound-pass path sweep completed for every od (label budget not hit, capacity duals
+    /// nonnegative) and string pricing was exhaustive — always the case without maintenance,
+    /// only under ExactStringPricing with maintenance (the label-limited PRICE-S can miss the
+    /// best missing string, so those bounds are estimates).</param>
     public sealed record NodeResult(LpResult Lp, ColGenStats Stats, bool DeadlineHit = false,
-        double DualBound = double.PositiveInfinity);
+        double DualBound = double.PositiveInfinity, bool BoundCertified = false);
 
     /// <summary>Fired after every pricing iteration: (iteration, lp objective, columns added).</summary>
     public event Action<int, double, int>? IterationProgress;
@@ -96,11 +101,12 @@ public sealed class ColumnGeneration
         int pricingIters = 0, cuttingIters = 0, pathsAdded = 0, stringsAdded = 0, cutsAdded = 0;
         var lp = _rmp.SolveLp();
         MasterDuals? center = null; // dual stabilization center (last true duals seen)
-        // tightest valid dual bound seen across the convergence: every full pricing pass
-        // yields one (Farley), and an interruption right after a cutting iteration (duals in
-        // mid-swing, huge reduced costs) then falls back to the best earlier bound instead
-        // of reporting a uselessly wide one
-        double bestValidBound = double.PositiveInfinity;
+        // cheap per-iteration Farley estimate used ONLY to steer the gap extension: it is
+        // built from the capped pricers, which can miss the best missing column, so it is
+        // NOT a valid bound — anything returned to the caller goes through CertifiedFarley
+        double steerBound = double.PositiveInfinity;
+        double finalDual = double.PositiveInfinity;
+        bool finalCertified = false;
 
         for (int iter = 0; iter < _opt.MaxIterations; iter++)
         {
@@ -134,24 +140,30 @@ public sealed class ColumnGeneration
             // valid bounds only ever come from true-dual passes: reduced costs against
             // smoothed prices do not bound the LP the master actually solved
             if (!smoothed && priceStrings && lp.Status == LpStatus.Optimal)
-                bestValidBound = Math.Min(bestValidBound,
-                    FarleyBound(lp.Objective, pathTask.Result, stringTask.Result));
+                steerBound = Math.Min(steerBound,
+                    SteeringBound(lp.Objective, pathTask.Result, stringTask.Result));
 
             // gap extension: past the soft deadline, keep converging while the LP is still
             // provably far from done (bound quality governs, not the clock) — hard cap aside
             if (deadlineHit && gapExtend && !(hardDeadline?.Invoke() ?? false)
-                && lp.Status == LpStatus.Optimal && double.IsFinite(bestValidBound))
+                && lp.Status == LpStatus.Optimal && double.IsFinite(steerBound))
             {
-                double gap = (bestValidBound - lp.Objective) / Math.Max(1, Math.Abs(bestValidBound));
+                double gap = (steerBound - lp.Objective) / Math.Max(1, Math.Abs(steerBound));
                 if (gap > gapThreshold) deadlineHit = false;
             }
 
             if (deadlineHit)
             {
                 IterationProgress?.Invoke(pricingIters, lp.Objective, 0);
+                // the deadline iteration always priced TRUE duals (never smoothed), so a
+                // certified Farley bound is computed right here; the cheap steering
+                // estimates accumulated above are never returned to the caller
+                var (db, certified) = lp.Status == LpStatus.Optimal
+                    ? CertifiedFarley(lp.Objective, trueDuals, rest)
+                    : (double.PositiveInfinity, false);
                 return new NodeResult(lp, new ColGenStats(pricingIters, cuttingIters,
                     pathsAdded, stringsAdded, cutsAdded),
-                    DeadlineHit: true, DualBound: bestValidBound);
+                    DeadlineHit: true, DualBound: db, BoundCertified: certified);
             }
 
             center = trueDuals;
@@ -179,8 +191,8 @@ public sealed class ColumnGeneration
                 var trueStrings = _stringPricer.Price(trueDuals, rest,
                     _opt.MaxStringColumnsPerIteration, _opt.Eps);
                 if (lp.Status == LpStatus.Optimal)
-                    bestValidBound = Math.Min(bestValidBound,
-                        FarleyBound(lp.Objective, truePaths, trueStrings));
+                    steerBound = Math.Min(steerBound,
+                        SteeringBound(lp.Objective, truePaths, trueStrings));
                 int trueAdded = truePaths.Count(p => _rmp.AddPath(p.Path));
                 pathsAdded += trueAdded;
                 int trueStringsAdded = trueStrings.Count(s => _rmp.AddString(s.Str));
@@ -212,26 +224,87 @@ public sealed class ColumnGeneration
                     continue;
                 }
             }
+
+            // the capped pricers finding nothing does not prove convergence: one uncapped
+            // PRICE-P pass either yields a column whose exact rc (recomputed from the
+            // master's own coefficients) improves the LP — then the loop continues — or
+            // feeds a certified Farley bound for the final result
+            var pathBound = _pathPricer.PriceBound(trueDuals, rest, _opt.Eps);
+            int confirmAdded = 0;
+            foreach (var cp in pathBound.Paths)
+                if (_rmp.TruePathRc(cp.Path, trueDuals) > _opt.Eps && _rmp.AddPath(cp.Path))
+                { confirmAdded++; pathsAdded++; }
+            if (confirmAdded > 0) { lp = _rmp.SolveLp(); continue; }
+            if (lp.Status == LpStatus.Optimal)
+                (finalDual, finalCertified) =
+                    CertifiedFarley(lp.Objective, trueDuals, rest, pathBound);
             break; // no improving columns and no violated cuts
         }
 
         return new NodeResult(lp,
             new ColGenStats(pricingIters, cuttingIters, pathsAdded, stringsAdded, cutsAdded),
-            DeadlineHit: false,
-            DualBound: lp.Status == LpStatus.Optimal
-                ? Math.Min(lp.Objective, bestValidBound) : double.PositiveInfinity);
+            DeadlineHit: false, DualBound: finalDual, BoundCertified: finalCertified);
     }
 
     /// <summary>
-    /// Farley/Lagrangian bound at interruption: current RMP value plus the most optimistic
-    /// contribution of the columns not yet generated. Each missing path column improves at
-    /// most rc_od per tonne and the od carries at most d_od tonnes; each missing string
-    /// improves at most rc per unit and fleet k operates at most n_k strings. The best string
-    /// overall is always inside the pricer's top-K return, so the global maximum is exact;
-    /// per-od path reduced costs are exact (one best path per od). Eps padding covers
-    /// columns below the pricing threshold.
+    /// Valid Farley/Lagrangian bound: RMP value plus, per od, d_od times an UPPER bound on
+    /// the best reduced cost over all feasible missing paths (uncapped bound pass of
+    /// PRICE-P, cut duals charged optimistically), plus a string term. Without maintenance
+    /// the string term is vacuous: every feasible string is a single flight and
+    /// SeedTrivialStrings put all of them into the master, so no string column is missing
+    /// (an eps cushion per aircraft stays). With maintenance, missing multi-flight strings
+    /// are aggregated through the flight-cover rows — each string covers at least one flight
+    /// and sum over strings covering f of x_s &lt;= 1, hence improvement &lt;=
+    /// sum_f max_{s covering f} rc_s+/|s| — which stays valid for chi = 0 strings that
+    /// consume no fleet-row capacity (the old n_k aggregation did not). Certified only when
+    /// the path pass completed everywhere and string pricing was exhaustive
+    /// (ExactStringPricing): the label-limited PRICE-S can miss the per-flight maximum.
     /// </summary>
-    private double FarleyBound(double rmpObjective,
+    private (double Bound, bool Certified) CertifiedFarley(double rmpObjective,
+        MasterDuals duals, PricingRestrictions rest,
+        (List<PathPricer.PricedPath> Paths, bool Complete)? pathBound = null)
+    {
+        var (bPaths, complete) = pathBound ?? _pathPricer.PriceBound(duals, rest, _opt.Eps);
+        bool certified = complete;
+        double bound = rmpObjective;
+        var rcByOd = new Dictionary<int, double>();
+        foreach (var p in bPaths)
+            if (!rcByOd.TryGetValue(p.Path.OdId, out double rc) || p.ReducedCost > rc)
+                rcByOd[p.Path.OdId] = p.ReducedCost;
+        foreach (var od in _inst.Ods)
+            // + 1e-9 absorbs the dominance tolerance of the labeling (1e-12 scale)
+            bound += od.Weight * Math.Max(_opt.Eps, rcByOd.GetValueOrDefault(od.Id, 0) + 1e-9);
+
+        if (!_rmp.WithMaintenance)
+        {
+            // FARP-T: strings are single flights, all pre-seeded by SeedTrivialStrings —
+            // no string column can be missing; keep the eps cushion per aircraft
+            foreach (var k in _inst.Fleets) bound += k.Count * _opt.Eps;
+            return (bound, certified);
+        }
+        var strings = _stringPricer.Price(duals, rest,
+            _opt.ExactStringPricing ? int.MaxValue : _opt.MaxStringColumnsPerIteration, _opt.Eps);
+        var perFlight = new double[_inst.Flights.Length];
+        foreach (var s in strings)
+        {
+            if (_rmp.ContainsString(s.Str)) continue; // in-master: accounted for by the LP
+            double ratio = s.ReducedCost / s.Str.FlightIds.Length;
+            foreach (var fid in s.Str.FlightIds)
+                if (ratio > perFlight[fid]) perFlight[fid] = ratio;
+        }
+        foreach (var f in _inst.CargoFlights)
+            bound += Math.Max(_opt.Eps, perFlight[f.Id]);
+        return (bound, certified && _opt.ExactStringPricing);
+    }
+
+    /// <summary>
+    /// Cheap per-iteration Farley ESTIMATE from the capped pricing pass — used only to steer
+    /// the gap extension. The capped pricers can miss the best missing column (path label
+    /// caps, top-K strings, and with maintenance chi = 0 strings consume no fleet-row
+    /// capacity, so the n_k aggregation undercounts), hence this value is never returned to
+    /// callers; DualBound always comes from CertifiedFarley.
+    /// </summary>
+    private double SteeringBound(double rmpObjective,
         List<PathPricer.PricedPath> paths, List<StringPricer.PricedString> strings)
     {
         // only columns NOT yet in the master count: for columns already inside, LP

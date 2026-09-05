@@ -109,6 +109,7 @@ public static class SolutionJson
                 firstIncumbentObjective = res.FirstIncumbentObjective,
                 firstIncumbentSeconds = res.FirstIncumbentSeconds,
                 exact = res.Exact,
+                boundCertified = res.BoundCertified,
                 stopReason = res.StopReason,
             },
             pnl = new

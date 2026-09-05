@@ -847,7 +847,8 @@ as the ball, never leaves the loader's level.}
 \end{figure}
 
 The best full-demand schedule obtained by the design pipeline alone reaches
-142.8\,M at a 9.9\% certified gap; in it, 22{,}011 of 29{,}819 shipments
+142.8\,M at a 9.9\% gap against the run's dual-bound estimate (the
+certification caveat, Limitation~(viii), applies); in it, 22{,}011 of 29{,}819 shipments
 (46.0\,kt, a 46.6\,M bill) are contracted and only 58 of 154 aircraft fly.
 That anatomy --- a long tail of ${\sim}2$-tonne shipments scattered over
 ${\sim}150$ stations, the amber fans of Figure~\ref{fig:map} --- motivates both the wave experiment (negative,
@@ -957,6 +958,19 @@ within one family is needed to attribute it to size.
 horizons differ (single night vs.\ periodic week) and neither instance set
 is expressible in the other's formulation without changing the problem, so a
 head-to-head would compare problems rather than methods.
+(viii) A post-campaign code audit (September 2026) found and fixed two
+defects that affect the reported numbers, not the mechanisms. First,
+design-round instance rebuilds silently dropped the cargo-handling time
+(30 to 0 minutes), relaxing connection windows for the designed networks
+relative to the correctly handled baseline; the design-uplift margins are
+therefore optimistic until re-measured. Second, the dual bound combined a
+label-capped path pricer, which can miss an od's best path, with a
+fleet-size string aggregation that strings crossing no fleet-count time
+escape, so pre-fix gaps --- including the 9.9\% above --- are estimates,
+not certificates. The solver now recomputes the Farley bound from an
+uncapped confirmation pass with a flight-cover string aggregation and
+stamps every run with a certification flag; the multi-seed battery of the
+road map will run entirely on the fixed solver.
 
 \section{Conclusions and road map}\label{sec:conclusions}
 
@@ -978,10 +992,11 @@ which would upgrade every claim in this paper.
 
 \section*{Reproducibility and AI disclosure}
 
-The complete implementation (solver, generators, web workbench, 120
-verification tests), all instance generators, and the raw logs behind every
-number in this paper are public in the accompanying repository. Runs are
-deterministic given a seed. This project was developed with substantial
+The complete implementation (solver, generators, web workbench, 124
+verification tests) and all instance generators are public in the
+accompanying repository; instances and every run output are regenerated
+deterministically from their integer seeds by the commands documented
+there --- raw logs themselves are not versioned. This project was developed with substantial
 assistance from an AI coding agent (Anthropic Claude), including code,
 instance parameter estimation, experiment execution and the drafting of
 this manuscript; all algorithmic decisions, measurements and claims were

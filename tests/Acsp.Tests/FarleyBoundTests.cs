@@ -41,7 +41,9 @@ public class FarleyBoundTests
             rc -= d.FlightCover[fid];
             foreach (var lid in inst.Flights[fid].LegIds)
             {
-                rc -= -inst.Fleets[k].MaxWeight * d.LegWeight[lid];
+                // the master's capacity coefficient follows the payload-range frontier
+                // (Rmp.AddString) — MaxWeight here would pin the pricer to a wrong reference
+                rc -= -inst.Fleets[k].PayloadAtKm(inst.Legs[lid].DistanceKm) * d.LegWeight[lid];
                 rc -= -inst.Fleets[k].MaxVolume * d.LegVolume[lid];
             }
             foreach (var ((od, fl), pi) in d.ImpliedBoundCuts)

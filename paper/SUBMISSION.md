@@ -70,6 +70,17 @@ https://github.com/csotogd/flight_scheduling
 
 ## Before you press submit
 
+- [ ] **BLOCKER (2026-09-05 audit): re-run the campaign on the fixed solver.** Two
+      defects were found and fixed after the campaign: (1) design-round instance
+      rebuilds dropped `CargoHandlingMinutes` (designed networks ran with easier
+      connections than the baseline → all design uplifts are optimistic); (2) the
+      dual bound could undershoot (label-capped PRICE-P path term; χ=0 strings
+      escape the Σ n_k string aggregation) → pre-fix gaps, including RLA's 9.9%,
+      are estimates, not certificates. The solver now emits `boundCertified` in
+      every solution JSON, and the suite grew 120 → 124 tests. Every number in
+      the paper/README produced by pre-fix runs (design uplifts, tree-table gaps,
+      142.8M @ 9.9%, regional +4–5M) must be re-measured or stay explicitly
+      marked as pre-fix estimates (current wording does the latter).
 - [x] Closest concurrent work read and positioned against: Zhu, Belieres, Hewitt
       and Wu, Transportation Research Part B 209:103469 (2026). Cited, and the
       three differences (horizon, candidate space, scale/evidence) are stated in

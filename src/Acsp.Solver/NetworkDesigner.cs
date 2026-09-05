@@ -395,6 +395,7 @@ public sealed class NetworkDesigner
                 finalBase = new Instance
                 {
                     Name = _base.Name, Period = _base.Period, DeliverAll = _base.DeliverAll,
+                    CargoHandlingMinutes = _base.CargoHandlingMinutes,
                     Airports = _base.Airports,
                     Fleets = _base.Fleets, Legs = current.Legs, Flights = current.Flights,
                     Ods = _base.Ods,
@@ -678,6 +679,7 @@ public sealed class NetworkDesigner
         var next = new Instance
         {
             Name = inst.Name, Period = inst.Period, DeliverAll = inst.DeliverAll,
+            CargoHandlingMinutes = inst.CargoHandlingMinutes,
             Airports = inst.Airports,
             Fleets = inst.Fleets, Legs = [.. legs], Flights = [.. flights], Ods = inst.Ods,
         };
@@ -727,6 +729,7 @@ public sealed class NetworkDesigner
         var next = new Instance
         {
             Name = inst.Name, Period = inst.Period, DeliverAll = inst.DeliverAll,
+            CargoHandlingMinutes = inst.CargoHandlingMinutes,
             Airports = inst.Airports,
             Fleets = inst.Fleets, Legs = [.. legs], Flights = [.. flights], Ods = inst.Ods,
         };

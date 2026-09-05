@@ -89,6 +89,7 @@ public static class OdConsolidator
         var coarse = new Instance
         {
             Name = inst.Name, Period = inst.Period, DeliverAll = inst.DeliverAll,
+            CargoHandlingMinutes = inst.CargoHandlingMinutes,
             Airports = inst.Airports,
             Fleets = inst.Fleets, Legs = inst.Legs, Flights = inst.Flights, Ods = ods,
         };

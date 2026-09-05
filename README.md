@@ -270,6 +270,8 @@ On GI-I the designed network operates ~1,300 own flights with 111 of 148 aircraf
 
 Full benchmark output lands in `results/RESULTS.md` when you run the benchmark locally (generated instances and results are not committed). All figures above are for the fictional airlines described in the data note at the top — synthetic demand, AI-estimated costs and fleets.
 
+> **Audit note (2026-09-05).** The campaign behind these figures ran before two fixes: design-round instance rebuilds dropped `CargoHandlingMinutes` (designed networks saw easier connections than the baseline they are compared against), and the dual bound was an estimate rather than a certificate (label-capped path pricer; χ=0 strings escaped the fleet-size aggregation). Both are fixed — solution JSONs now carry a `boundCertified` flag — and the table will be re-measured; until then treat the uplifts as optimistic.
+
 ---
 
 ## 9. Honest limitations

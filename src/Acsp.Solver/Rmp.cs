@@ -153,6 +153,21 @@ public sealed class Rmp : IDisposable
     public bool ContainsPath(CargoPath p) => _pathIndex.ContainsKey(p.Key());
     public bool ContainsString(FlightString s) => _stringIndex.ContainsKey(s.Key());
 
+    /// <summary>Exact reduced cost of a path column, recomputed from the coefficients
+    /// <see cref="AddPath"/> would give it (cut duals once per DISTINCT flight). This is the
+    /// ground truth a pricer's claimed rc must be checked against before certifying anything.</summary>
+    public double TruePathRc(CargoPath p, MasterDuals d)
+    {
+        var od = _inst.Ods[p.OdId];
+        double rc = p.Margin(_inst) - d.OdDemand[p.OdId];
+        foreach (var lid in p.LegIds)
+            rc -= d.LegWeight[lid] + od.VolumePerTonne * d.LegVolume[lid];
+        foreach (var fid in p.LegIds.Select(l => _inst.Legs[l].FlightId).Distinct())
+            if (d.ImpliedBoundCuts.TryGetValue((p.OdId, fid), out double pi))
+                rc -= pi;
+        return rc;
+    }
+
     public bool AddPath(CargoPath p)
     {
         var key = p.Key();

@@ -72,7 +72,7 @@ public sealed class StringPricer
         {
             rc -= duals.FlightCover[fid];
             foreach (var lid in _inst.Flights[fid].LegIds)
-                rc += _inst.Fleets[k].MaxWeight * duals.LegWeight[lid]
+                rc += _inst.Fleets[k].PayloadAtKm(_inst.Legs[lid].DistanceKm) * duals.LegWeight[lid]
                     + _inst.Fleets[k].MaxVolume * duals.LegVolume[lid];
             if (_inst.Flights[fid].IsOptionalCargo)
                 foreach (var ((od, fl), pi) in duals.ImpliedBoundCuts)
@@ -133,7 +133,7 @@ public sealed class StringPricer
             {
                 double g = -f.FixedCostByFleet[k] - duals.FlightCover[f.Id];
                 foreach (var lid in f.LegIds)
-                    g += _inst.Fleets[k].MaxWeight * duals.LegWeight[lid]
+                    g += _inst.Fleets[k].PayloadAtKm(_inst.Legs[lid].DistanceKm) * duals.LegWeight[lid]
                        + _inst.Fleets[k].MaxVolume * duals.LegVolume[lid];
                 flightGain[k, f.Id] = g;
             }

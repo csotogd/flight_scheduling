@@ -90,10 +90,12 @@ pool-scaling experiments of §5.1, which exposed each need):
 - **Column-pool warm start**: the RMP columns generated in round r−1 are re-injected into
   round r (remapped after evictions), so its column generation only prices the incremental
   batch — root convergence in ~15–40 iterations instead of ~200.
-- **Deadline with a Farley bound**: column generation checks the round clock every
-  iteration; on expiry it returns the tightest *valid* dual bound seen during convergence
-  (LP + Σ d_od·rc⁺ + Σ n_k·rc⁺ from full pricing passes), so hard per-round budgets are
-  mathematically legal.
+- **Deadline with a certified Farley bound**: column generation checks the round clock
+  every iteration; on expiry it recomputes a *valid* dual bound from an uncapped PRICE-P
+  bound pass (cut duals charged once per distinct flight) plus a flight-cover string
+  aggregation, and stamps the result with a certification flag (`boundCertified`), so hard
+  per-round budgets are mathematically legal. Cheap per-iteration estimates only steer the
+  gap extension and are never returned to callers.
 - **Seeded incumbent**: round r−1's schedule is feasible as-is in round r's model (new
   candidates at zero) and is accepted as the initial incumbent — a round can never return
   less than the previous one — and passed to CPLEX as a partial MIP start so the
@@ -337,6 +339,22 @@ carry positive rc at convergence, and (c) in-master columns with positive rc sit
 upper bound. Measured effect on a seeded GI round cut at 4 min: reported gap 8.8%
 (vs 2,016% before). The pre-fix bounds were valid but uselessly loose; solutions,
 decisions and feasibility were never affected.
+
+**2026-09 follow-up (second repair).** Two leaks survived the membership filter, in the
+*other* direction — bounds that could undershoot. The label-capped PRICE-P (64 labels per
+node) can miss an od's true best path entirely, so the path term was not an upper bound;
+and strings with χ=0 carry no fleet-row coefficient, so the Σ_k n_k aggregation does not
+bound their contribution (two absent sequential flights with rc 1 each can contribute 2
+while the formula adds 1). The bound is now computed by an uncapped PRICE-P bound pass —
+implied-bound-cut duals charged exactly once per distinct flight via a per-label cut
+bitmask that also sharpens dominance — the string term uses the flight-cover aggregation
+Σ_f max_{s∋f} rc_s⁺/|s| (valid for χ=0 strings), and convergence is only declared after an
+uncapped confirmation pass whose candidates are re-priced against the master's own
+coefficients (`Rmp.TruePathRc`). Every node result and solution JSON carries
+`boundCertified`: true without maintenance; with maintenance only under exact string
+pricing (the σ-capped labeler cannot certify a maximum it may not have seen).
+`AuditRegressionTests` pin the pricer/master payload-range consistency, the
+handling-minutes preservation in design rebuilds, and both certification directions.
 
 ## 6. Known limitations
 
