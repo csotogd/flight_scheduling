@@ -278,6 +278,7 @@ public sealed class RegionalOptimizer
         // side assembles by construction after balance repair; if it still fails, skip the
         // block rather than crash (the cycle simply moves on).
         var frozenNeed = new int[_inst.Fleets.Length];
+        var keptNeed = new int[_inst.Fleets.Length];
         try
         {
             var totalUsed = new int[_inst.Fleets.Length];
@@ -291,7 +292,6 @@ public sealed class RegionalOptimizer
                 WithMaintenance = incumbent.WithMaintenance,
             };
             SolutionAssembler.AssembleRotations(_inst, keptSol);
-            var keptNeed = new int[_inst.Fleets.Length];
             foreach (var r in keptSol.Rotations)
                 keptNeed[r.FleetId] += r.AircraftNeeded(_inst);
             for (int k = 0; k < _inst.Fleets.Length; k++)
@@ -318,7 +318,12 @@ public sealed class RegionalOptimizer
         {
             Id = k.Id, Code = k.Code,
             // fleetShave: chain-splitting overhead LEARNED from a previous merge of this
-            // block that failed the global fleet-size check by that many aircraft
+            // block that failed the global fleet-size check by that many aircraft. NOT
+            // clamped to the seed's own count (keptNeed): with a fully used fleet the
+            // idle slack is zero and any clamp would permanently disable the learning —
+            // the shave exists precisely because the un-shaved budget produced infeasible
+            // merges. A slice below keptNeed makes the block reject its own seed and run
+            // unseeded; that costs a warm start, never feasibility (the merge guard)
             Count = Math.Max(0, k.Count - frozenNeed[k.Id]
                 - (fleetShave is null ? 0 : fleetShave[k.Id])),
             FixedCostPerAircraft = k.FixedCostPerAircraft, MaxWeight = k.MaxWeight,

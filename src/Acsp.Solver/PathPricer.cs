@@ -183,6 +183,12 @@ public sealed class PathPricer
         foreach (var leg in _inst.Legs)
             if (duals.LegWeight[leg.Id] < -1e-9 || duals.LegVolume[leg.Id] < -1e-9)
             { complete = false; break; }
+        // negative implied-bound-cut duals break the A* admissibility the same way negative
+        // capacity duals do: Enter() credits them (cost decreases below the duals-free
+        // heuristic), so the early exits may miss the true optimum — bound not certified
+        if (complete)
+            foreach (var (_, pi) in duals.ImpliedBoundCuts)
+                if (pi < -1e-9) { complete = false; break; }
         Prewarm();
         var results = new PricedPath?[_inst.Ods.Length];
         var odComplete = new bool[_inst.Ods.Length];

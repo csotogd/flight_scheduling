@@ -289,14 +289,20 @@ Backend benchmark (same instance, same limits):
 | GI-II (0.5% target) | time-limited at 907 s, 0.50% | reached in 268 s |
 | GI-III | root colgen saturates both backends (pricing-bound, ~29k columns) | idem, ~11% faster |
 
-Autonomous design (batch 100, 6 rounds). "Flights/week" counts own-fleet flights operated
-in the base vs the designed schedule (externally booked capacity noted separately):
+Autonomous design (batch 100, up to 8 rounds). "Flights/week" counts own-fleet flights
+operated in the base vs the designed schedule (externally booked capacity noted
+separately). All figures transcribed from the retained solution artifacts
+(`results/*.solution.json`):
 
-| Instance | Base profit | Designed profit | Flights/week | Accepted / tried | Notes |
-|---|---|---|---|---|---|
-| RC-I | $0.47M | $1.60M (+240%) | 82 → 135 | 58 / 297 | converged round 4 |
-| MI-I | $1.51M | $2.53M (+67%) | 73 → 116 | 43 / 600 | converged round 6 |
-| GI-I | $44.8M | $94.0M (+110%) | 1,057 → 1,294 (+21 external bookings) | 258 / 600 | 233 hub + 4 direct + 21 external; still improving at round 6 |
+| Instance | Base profit | Designed profit | Flights/week | Notes |
+|---|---|---|---|---|
+| RC-I | $0.47M | $1.51M (+222%) | 81 → 123 | best at round 7 of 8 (round cap) |
+| MI-I | $1.51M | $4.59M (+204%) | 73 → 109 | best at round 6 of 7 (round cap) |
+| GI-I | $44.7M | $94.0M (+110%) | 1,057 → 1,294 (+21 external bookings) | best at round 6 of 6 (round cap) |
+
+A batch-300 variant of GI-I (retained as `GI-I-s1+design.solution.json`) reaches $94.1M,
+converging at round 4 with 1,311 operated flights — bigger batches buy convergence
+speed, not profit.
 
 On GI-I the designed network operates ~1,300 own flights (3,129 legs) with 111 of 148
 aircraft, serving 73.4% of 35,153 t of weekly demand; the 21 external bookings cost $0.47M
@@ -355,11 +361,17 @@ coefficients (`Rmp.TruePathRc`). Every node result and solution JSON carries
 pricing (the σ-capped labeler cannot certify a maximum it may not have seen).
 `AuditRegressionTests` pin the pricer/master payload-range consistency, the
 handling-minutes preservation in design rebuilds, and both certification directions.
+`AuditRegression2Tests` (second audit, 2026-09-16) pin the exhausted-tree bound
+reporting (the final bound dominates every gap-target prune), the string pricer's
+two-week-slot connection window and its strict `wait < N` rule, the unconstrained
+elapsed-limit overflow, week-wrapping rotation feasibility and aircraft accounting,
+and the negative-cut-dual certification guard of the bound pass.
 
 ## 6. Known limitations
 
-- Airport operating hours (curfews) are not modeled anywhere — generated and proposed
-  flights can depart/arrive at any hour. Relevant for real European airports.
+- Night curfews (§4) restrict **arrivals** only: departures inside the curfew window
+  remain legal, and no other airport operating-hour limits (slots, handling capacity)
+  are modeled.
 - GI-III-scale root column generation is pricing-bound; a faster LP does not help.
   Warm-starting columns across design rounds and pricing parallelization are the obvious
   next steps.

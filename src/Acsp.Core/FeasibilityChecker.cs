@@ -55,12 +55,10 @@ public static class FeasibilityChecker
                     var nextFlight = inst.Flights[next.FlightIds[0]];
                     if (inst.FlightDestination(lastFlight) != inst.FlightOrigin(nextFlight))
                         v.Add($"rotation not connected: {lastFlight.Code} -> {nextFlight.Code} (RP-2-CONN)");
-                    int conn = p.Time(inst.FlightArr(lastFlight), inst.FlightDep(nextFlight));
-                    int required = sol.WithMaintenance
-                        ? inst.Fleets[r.FleetId].MaintenanceDuration
-                        : inst.MinGroundTime(inst.FlightDestination(lastFlight), r.FleetId);
-                    if (conn < required)
-                        v.Add($"rotation connection {lastFlight.Code}->{nextFlight.Code}: {conn}min < {required}min (RP-3-GROUND)");
+                    // RP-3-GROUND: in the periodic model a mod-N connection gap shorter than
+                    // the required ground/maintenance stop is NOT a violation — the aircraft
+                    // waits gap + N minutes (a week-wrapping connection). The extra period is
+                    // what Rotation.TotalMinutes charges, so the cost lands in FA-2-SIZE below.
                 }
                 usage[r.FleetId] += r.AircraftNeeded(inst);
             }

@@ -6,8 +6,14 @@ public sealed class Rotation
     public required int FleetId { get; init; }
     /// <summary>Strings in cyclic order (the last connects back to the first).</summary>
     public required List<FlightString> Strings { get; init; }
+    /// <summary>Whether the rotation's connections must host maintenance stops (set by the
+    /// assembler from the solution); determines the required inter-string ground time.</summary>
+    public bool WithMaintenance { get; init; }
 
-    /// <summary>Total duration of one cycle in minutes: string spans plus connection times.</summary>
+    /// <summary>Total duration of one cycle in minutes: string spans plus connection times.
+    /// A connection whose mod-N gap cannot host the required ground/maintenance stop wraps
+    /// into the next period: the aircraft waits gap + N minutes, exactly as the master's
+    /// timeline network charges it (the ground-arc chain crosses the count time once more).</summary>
     public long TotalMinutes(Instance inst)
     {
         var p = inst.Period;
@@ -17,8 +23,13 @@ public sealed class Rotation
             var s = Strings[i];
             var next = Strings[(i + 1) % Strings.Count];
             total += s.ElapsedMinutes(inst);
-            total += p.Time(inst.FlightArr(inst.Flights[s.FlightIds[^1]]),
-                            inst.FlightDep(inst.Flights[next.FlightIds[0]]));
+            long conn = p.Time(inst.FlightArr(inst.Flights[s.FlightIds[^1]]),
+                               inst.FlightDep(inst.Flights[next.FlightIds[0]]));
+            int required = WithMaintenance
+                ? inst.Fleets[FleetId].MaintenanceDuration
+                : inst.MinGroundTime(inst.FlightDestination(inst.Flights[s.FlightIds[^1]]), FleetId);
+            if (conn < required) conn += p.N * ((required - conn + p.N - 1) / p.N);
+            total += conn;
         }
         return total;
     }

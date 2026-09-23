@@ -2,7 +2,7 @@
 
 **An optimizer that designs a cargo airline's weekly network end-to-end: which flights to fly, which aircraft type flies each one, how the physical fleet rotates through them (maintenance included), and which shipments travel on which itineraries — all decided *together*, in one mathematical model.**
 
-Measured on industry-scale synthetic instances, letting the tool design the network autonomously lifts weekly operating profit by **+240%** (regional carrier), **+67%** (mid-size international), and **+110%** on an integrator-scale network with 1,250+ weekly flights and 9,000+ origin–destination demands.
+Measured on industry-scale synthetic instances, letting the tool design the network autonomously lifts weekly operating profit by **+222%** (regional carrier), **+204%** (mid-size international), and **+110%** on an integrator-scale network with 1,250+ weekly flights and 9,000+ origin–destination demands (single pre-fix runs, read from the retained solution artifacts — see the audit notes in §8).
 
 > 🧪 **All data is fictional.** Every airline in this repository is synthetic: the four archetypes from the paper (RC, IC, MI, EX) plus two added here — **GI** ("Global Integrator") and **RLA** ("Real-Life-scale Airline"). All costs, demand volumes, aircraft fleets, and hub choices are **plausibility estimates produced by Claude (Anthropic's AI assistant)**, calibrated in scale to the paper's published Tables 1–2. Nothing in this repository is data from, or a claim about, any real company.
 
@@ -258,19 +258,23 @@ dotnet run --project src/Acsp.Web
 
 ## 8. Measured results
 
-Autonomous design, batch 100, 6 rounds (details and scaling experiments in [ALGORITHM.md](ALGORITHM.md) §5):
+Autonomous design, batch 100, up to 8 rounds (details and scaling experiments in [ALGORITHM.md](ALGORITHM.md) §5). Every figure below is transcribed from the retained solution artifacts (`results/*.solution.json`); note the artifacts come from different pre-fix solver builds, one more reason the re-run below is the gating step:
 
-| Instance | Base profit | Designed profit | Own flights/week | Candidates accepted / tried |
+| Instance | Base profit | Designed profit | Own flights operated | Design rounds |
 |---|---|---|---|---|
-| RC-I (regional) | $0.47M | **$1.60M (+240%)** | 82 → 135 | 58 / 297 |
-| MI-I (mid-size) | $1.51M | **$2.53M (+67%)** | 73 → 116 | 43 / 600 |
-| GI-I (integrator scale) | $44.8M | **$94.0M (+110%)** | 1,057 → 1,294 | 258 / 600 |
+| RC-I (regional) | $0.47M | **$1.51M (+222%)** | 81 → 123 | best at 7 of 8 |
+| MI-I (mid-size) | $1.51M | **$4.59M (+204%)** | 73 → 109 | best at 6 of 7 |
+| GI-I (integrator scale) | $44.7M | **$94.0M (+110%)** | 1,057 → 1,294 | best at 6 of 6 |
+
+A batch-300 variant of the GI-I design run (also retained, `GI-I-s1+design.solution.json`) reaches **$94.1M**, converging at round 4 with 1,311 operated flights — more proposals per round buy convergence speed, not profit.
 
 On GI-I the designed network operates ~1,300 own flights with 111 of 148 aircraft, serves 73.4% of 35,153 t of weekly demand, and books 21 external charters ($0.47M) for demand no own-fleet candidate can reach. Backend comparison (same instance, same limits): CPLEX solves 1.5–3.4× faster than HiGHS across the GI set; at GI-III scale both are pricing-bound, not LP-bound.
 
 Full benchmark output lands in `results/RESULTS.md` when you run the benchmark locally (generated instances and results are not committed). All figures above are for the fictional airlines described in the data note at the top — synthetic demand, AI-estimated costs and fleets.
 
 > **Audit note (2026-09-05).** The campaign behind these figures ran before two fixes: design-round instance rebuilds dropped `CargoHandlingMinutes` (designed networks saw easier connections than the baseline they are compared against), and the dual bound was an estimate rather than a certificate (label-capped path pricer; χ=0 strings escaped the fleet-size aggregation). Both are fixed — solution JSONs now carry a `boundCertified` flag — and the table will be re-measured; until then treat the uplifts as optimistic.
+
+> **Audit note (2026-09-16).** A second audit rebuilt the table above strictly from the retained artifacts — earlier revisions quoted designed profits (RC $1.60M "+240%", MI $2.53M "+67%") that match no retained run and mixed solver versions in the baseline. It also fixed four solver defects: an exhausted search tree no longer reports `gap = 0` when subtrees were pruned within the gap target (the honest certificate is `optimum ≤ incumbent × (1 + gapTarget)`); the maintenance string pricer reaches connections two week-slots back and no longer overflows on unconstrained elapsed-time limits; and the feasibility checker accepts week-wrapping rotation connections the periodic model legally selects (now charged one extra aircraft, matching the master's accounting). `AuditRegression2Tests` pin all of it; the full re-measurement remains the gating step before submission.
 
 ---
 

@@ -81,6 +81,36 @@ https://github.com/csotogd/flight_scheduling
       the paper/README produced by pre-fix runs (design uplifts, tree-table gaps,
       142.8M @ 9.9%, regional +4–5M) must be re-measured or stay explicitly
       marked as pre-fix estimates (current wording does the latter).
+- [ ] **BLOCKER reinforced (2026-09-16 audit): four more solver defects fixed;
+      the re-run must happen on this second-audit build.** (1) Exhausted trees
+      reported Bound = incumbent / Gap = 0 although subtrees were pruned within
+      the gap target — every "0.00% / tree exhausted" row overstates its
+      certificate (the honest claim is optimum ≤ incumbent·(1+gapTarget));
+      (2) the maintenance string pricer's week window missed connections two
+      slots back (ExactMode was not exact → maintenance certificates could be
+      invalid); (3) unconstrained elapsed-time limits (int.MaxValue) overflowed
+      the week count and silently disabled maintenance string pricing;
+      (4) the feasibility checker rejected week-wrapping rotation connections
+      the master legally selects (and Rotation.AircraftNeeded undercounted them
+      by one aircraft, so recomputed solution costs disagreed with the RMP
+      objective). Paper propositions and pseudocode were also corrected to match
+      the implementation (Prop. 1 freeze criterion and flow classification,
+      Prop. 2 base case, eq:ibc restricted to own optional flights, Algorithm 1
+      round cap / flat threshold / final-solve semantics and I*/σ* snapshot,
+      fleet-slice seed-rejection caveat stated honestly — a seed-count clamp was
+      tried and reverted: it silently disables the shave learning whenever the
+      fleet is fully used). README/ALGORITHM design uplifts are now transcribed
+      from retained artifacts (+222%/+204%/+110%, replacing the unsupported
+      +240%/+67%; the GI row cites the batch-100 artifact, with the batch-300
+      variant noted separately). An adversarial review of the fix diff itself
+      then found and closed three more bound-reporting holes (adopted integral
+      nodes under truncated colgen, the gap-target stop testing a different
+      bound than the one reported, and a missing incumbent floor on non-empty-
+      stack exits). Suite 124 → 130 tests (`AuditRegression2Tests`).
+- [ ] Triage the audit's remaining unverified minors before v2: notation-table
+      symbols (W double use), RLA pipeline figures vs artifacts, design-layer
+      objective-evaluator mismatches (coarse vs full demand under
+      ConsolidateTinyFar; regional recourse pricing vs acceptance test).
 - [x] Closest concurrent work read and positioned against: Zhu, Belieres, Hewitt
       and Wu, Transportation Research Part B 209:103469 (2026). Cited, and the
       three differences (horizon, candidate space, scale/evidence) are stated in

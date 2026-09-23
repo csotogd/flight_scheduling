@@ -25,14 +25,26 @@ public sealed class StringPricer
     /// </summary>
     public bool ExactMode { get; set; }
 
+    /// <summary>False when the fleet's elapsed-time maintenance limit needs more week-slots
+    /// than the pricer's 6-week cap: the enumeration is then incomplete even in
+    /// <see cref="ExactMode"/>, and Farley bounds built on it must not claim certification.</summary>
+    public bool WeekWindowComplete { get; }
+
     public StringPricer(Instance inst, bool withMaintenance, int countTime)
     {
         _inst = inst;
         _withMaintenance = withMaintenance;
         _countTime = countTime;
         int n = inst.Period.N;
-        int maxElapsed = inst.Fleets.Max(k => k.MaxElapsedMinutesBetweenMaintenance);
-        _nWeeks = withMaintenance ? Math.Min(6, (maxElapsed + n - 1) / n + 1) : 1;
+        // long arithmetic: MaxElapsedMinutesBetweenMaintenance = int.MaxValue means
+        // "unconstrained" and must not overflow into a negative week count
+        long maxElapsed = inst.Fleets.Max(k => (long)k.MaxElapsedMinutesBetweenMaintenance);
+        long weeksNeeded = (maxElapsed + n - 1) / n + 1;
+        _nWeeks = withMaintenance ? (int)Math.Min(6, weeksNeeded) : 1;
+        // the 6-week cap is a tractability heuristic: when the elapsed limit would need
+        // more week-slots, even ExactMode cannot enumerate every feasible string and any
+        // bound built on top of this pricer must not claim certification
+        WeekWindowComplete = !withMaintenance || weeksNeeded <= 6;
 
         // successor/predecessor lists by airport connectivity
         var byOrigin = inst.CargoFlights.GroupBy(f => inst.FlightOrigin(f))
@@ -208,12 +220,15 @@ public sealed class StringPricer
                 }
             }
 
-            // pull labels from predecessor flights in the same or previous week
+            // pull labels from predecessor flights up to two week-slots back: a predecessor
+            // crossing the period boundary (dep + dur > N) whose successor departs earlier
+            // in the week than it arrives needs week - 2 (any further back the wait would
+            // reach a full period, which the wait < N check below rejects)
             foreach (var gid in _predFlights[fid])
             {
                 var g = _inst.Flights[gid];
                 if (!rest.FollowOnAllowed(g.Id, fid)) continue;
-                for (int w = Math.Max(0, week - 1); w <= week; w++)
+                for (int w = Math.Max(0, week - 2); w <= week; w++)
                 {
                     if (!labelsAt.TryGetValue((g.Id, w), out var predLabels)) continue;
                     foreach (var lab in predLabels)
@@ -222,7 +237,11 @@ public sealed class StringPricer
                         var fleet = _inst.Fleets[lab.Fleet];
                         long wait = absDep - lab.AbsArr;
                         if (wait < _inst.MinGroundTime(_inst.FlightOrigin(f), lab.Fleet)) continue;
-                        if (wait > p.N) continue; // more than a week idle wastes an aircraft
+                        // a full period (or more) idle wastes an aircraft — and wait == N
+                        // exactly would be re-read as a zero-minute connection when the
+                        // master reconstructs the string mod N (FlightString.ElapsedMinutes),
+                        // so the boundary case must be excluded, not just discouraged
+                        if (wait >= p.N) continue;
                         if (Visited(lab, fid)) continue; // elementarity
                         int ft = lab.FlightMinutes + _inst.FlightFlightTime(f);
                         int cyc = lab.Cycles + f.NumLegs;

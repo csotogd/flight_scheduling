@@ -294,7 +294,9 @@ public sealed class ColumnGeneration
         }
         foreach (var f in _inst.CargoFlights)
             bound += Math.Max(_opt.Eps, perFlight[f.Id]);
-        return (bound, certified && _opt.ExactStringPricing);
+        // certification also needs the pricer's week window to cover the elapsed-time
+        // limit: past its 6-week cap even ExactMode cannot enumerate every string
+        return (bound, certified && _opt.ExactStringPricing && _stringPricer.WeekWindowComplete);
     }
 
     /// <summary>

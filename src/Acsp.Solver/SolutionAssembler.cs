@@ -73,7 +73,8 @@ public static class SolutionAssembler
                     cur = successor[cur];
                     if (cur < 0) throw new InvalidOperationException("broken rotation chain");
                 }
-                sol.Rotations.Add(new Rotation { FleetId = k, Strings = cycle });
+                sol.Rotations.Add(new Rotation
+                { FleetId = k, Strings = cycle, WithMaintenance = sol.WithMaintenance });
             }
         }
     }

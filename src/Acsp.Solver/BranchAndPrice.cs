@@ -114,6 +114,11 @@ public sealed class BranchAndPrice
                 sw.Elapsed.TotalSeconds, phase));
         }
         double processingBound = double.PositiveInfinity; // bound of the node being processed
+        // max valid bound over every subtree discarded before being solved out: gap-target
+        // prunes keep their provable headroom, status-dropped nodes their inherited bound.
+        // The final bound must dominate these — "tree exhausted" alone only proves the
+        // optimum is within the gap target of the incumbent, not equal to it.
+        double prunedBound = double.NegativeInfinity;
         double OpenBound()
         {
             double b = stack.Count == 0 ? processingBound : Math.Max(stack.Max(s => s.InheritedBound), processingBound);
@@ -167,7 +172,12 @@ public sealed class BranchAndPrice
             var node = stack.Pop();
             if (!double.IsNegativeInfinity(incumbent) &&
                 node.InheritedBound - incumbent <= Math.Abs(incumbent) * _opt.GapTarget)
-                continue; // cannot improve by more than the gap target
+            {
+                // cannot improve by more than the gap target — but the subtree may still
+                // hold up to InheritedBound, which the final bound must reflect
+                prunedBound = Math.Max(prunedBound, node.InheritedBound);
+                continue;
+            }
 
             rmp.ApplyBranchingState(node.Restrictions, node.ForcedFlights, node.ForcedExternals,
                 node.FixedStrings);
@@ -186,19 +196,38 @@ public sealed class BranchAndPrice
             // bound (improving columns may remain) — the Farley bound in DualBound is
             if (nodesExplored == 1 && lp.Status == LpStatus.Optimal) rootBound = result.DualBound;
 
-            if (lp.Status == LpStatus.Infeasible) { Report("pruned (infeasible)"); continue; }
-            if (lp.Status != LpStatus.Optimal) { Report($"node status {lp.Status}"); continue; }
+            // discarded-but-unsolved subtrees stay represented in the final bound by the
+            // best valid bound available for them: the node's Farley bound if finite (it
+            // bounds the artificial-relaxed LP, hence the subtree), else the inherited one.
+            // An LP reported Infeasible is a restriction result only — missing columns
+            // could restore feasibility, so the subtree is NOT proven empty.
+            double discardBound() => Math.Min(result.DualBound, node.InheritedBound);
+            if (lp.Status == LpStatus.Infeasible)
+            { prunedBound = Math.Max(prunedBound, discardBound()); Report("pruned (infeasible)"); continue; }
+            if (lp.Status != LpStatus.Optimal)
+            { prunedBound = Math.Max(prunedBound, discardBound()); Report($"node status {lp.Status}"); continue; }
             if (rmp.ArtificialUsage(lp) > 1e-6)
-            { Report("pruned (artificials in basis: infeasible)"); continue; }
+            { prunedBound = Math.Max(prunedBound, discardBound()); Report("pruned (artificials in basis: infeasible)"); continue; }
             double nodeBound = Math.Min(result.DualBound, node.InheritedBound);
             processingBound = nodeBound;
             if (!double.IsNegativeInfinity(incumbent) &&
                 nodeBound - incumbent <= Math.Abs(incumbent) * _opt.GapTarget)
-            { Report("pruned (bound)"); continue; }
+            { prunedBound = Math.Max(prunedBound, nodeBound); Report("pruned (bound)"); continue; }
 
             if (rmp.IsIntegral(lp))
             {
+                // if the candidate is NOT adopted (dominated, or rejected by the
+                // feasibility check), the fathomed subtree must stay represented by its
+                // bound — otherwise a rejected optimum would silently leave the accounting.
+                // An ADOPTED node covers its subtree by the incumbent only when colgen
+                // converged: under truncation (deadline, or iteration cap leaving
+                // DualBound = +inf) lp.Objective is not the subtree optimum, so the
+                // certified headroom must stay represented as well
+                double before = incumbent;
                 TryAcceptIncumbent(rmp.ExtractSolution(lp), lp.Objective, "node");
+                if (incumbent <= before || result.DeadlineHit
+                    || double.IsPositiveInfinity(result.DualBound))
+                    prunedBound = Math.Max(prunedBound, nodeBound);
                 continue;
             }
 
@@ -261,8 +290,12 @@ public sealed class BranchAndPrice
             var decision = Branching.Decide(_inst, rmp, lp, node);
             if (decision is null)
             {
-                // numerically integral after all; accept
+                // numerically integral after all; accept (same bound bookkeeping as above)
+                double beforeInc = incumbent;
                 TryAcceptIncumbent(rmp.ExtractSolution(lp), lp.Objective, "node");
+                if (incumbent <= beforeInc || result.DeadlineHit
+                    || double.IsPositiveInfinity(result.DualBound))
+                    prunedBound = Math.Max(prunedBound, nodeBound);
                 continue;
             }
             decision.OneBranch.InheritedBound = nodeBound;
@@ -271,18 +304,30 @@ public sealed class BranchAndPrice
             stack.Push(decision.OneBranch); // depth-first, 1-branch first (§7)
             if (nodesExplored % 10 == 1) Report($"branched on {decision.Kind}");
 
-            // check achievable gap
-            double open = OpenBound();
+            // check achievable gap — against the SAME bound the result will report
+            // (open nodes AND discarded-subtree bounds), or the stop reason could claim
+            // a target the final certificate does not meet
+            double open = Math.Max(OpenBound(), Math.Min(rootBound, prunedBound));
             if (!double.IsNegativeInfinity(incumbent) &&
                 Gap(incumbent, open) <= _opt.GapTarget)
             { stopReason = "gap target reached"; break; }
         }
 
-        // With the tree exhausted every open bound is gone: the incumbent is optimal within the
-        // gap target (nodes are only pruned when they cannot improve by more than the target).
-        double finalBound = stack.Count == 0 ? incumbent : OpenBound();
+        // With the tree exhausted, the optimum is bounded by the best subtree bound that was
+        // discarded along the way (gap-target prunes leave up to |incumbent|*GapTarget of
+        // provable headroom) — NOT by the incumbent itself. Reporting Bound = incumbent and
+        // Gap = 0 here would overstate the certificate to "proven optimal".
+        // the incumbent floor applies to BOTH arms: a checked-feasible incumbent proves
+        // optimum >= incumbent, so no valid upper bound sits below it — without the floor
+        // an uncertified (maintenance) bound below a later heuristic incumbent would be
+        // reported as Gap = 0 without proof
+        double finalBound = Math.Max(incumbent, stack.Count == 0
+            ? Math.Min(rootBound, prunedBound)
+            : Math.Max(OpenBound(), Math.Min(rootBound, prunedBound)));
         sw.Stop();
-        bool exact = !_opt.WithMaintenance; // heuristic string pricing => approximative bounds
+        // exact needs both an exact pricer (no maintenance) AND certified pruning bounds:
+        // an uncertified bound used to prune could have cut off the true optimum
+        bool exact = !_opt.WithMaintenance && boundCertified;
         return new BpcResult(best, incumbent, finalBound, Gap(incumbent, finalBound),
             firstIncObj, firstIncTime, nodesExplored, sw.Elapsed.TotalSeconds, exact, stopReason,
             _opt.CollectColumnPool ? rmp.Paths.Select(pc => pc.Path).ToList() : null,
