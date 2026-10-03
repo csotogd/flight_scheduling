@@ -56,6 +56,7 @@ public sealed class Instance
                 for (int i = 0; i < f.LegIds.Length && ok; i++)
                 {
                     var leg = Legs[f.LegIds[i]];
+                    if (Airports[leg.Destination].InArrivalCurfew(leg.Arr)) ok = false;
                     // payload-range frontier: beyond the fleet's maximum range the leg is
                     // unflyable even empty (reduces to the RangeKm check without a curve)
                     if (k.PayloadAtKm(leg.DistanceKm) <= 0) ok = false;
@@ -81,8 +82,20 @@ public sealed class Instance
     /// <summary>dest_f / arr_f.</summary>
     public int FlightDestination(Flight f) => LastLeg(f).Destination;
     public int FlightArr(Flight f) => LastLeg(f).Arr;
-    /// <summary>dur_f: total duration in minutes.</summary>
-    public int FlightDuration(Flight f) => Period.Time(FlightDep(f), FlightArr(f));
+    /// <summary>dur_f: elapsed minutes over every leg and intermediate stop. Keeping the
+    /// complete span is essential when the flight crosses more than one period.</summary>
+    public int FlightDuration(Flight f)
+    {
+        int duration = 0;
+        for (int i = 0; i < f.LegIds.Length; i++)
+        {
+            var leg = Legs[f.LegIds[i]];
+            duration = checked(duration + leg.BlockTime(Period));
+            if (i + 1 < f.LegIds.Length)
+                duration = checked(duration + Period.Time(leg.Arr, Legs[f.LegIds[i + 1]].Dep));
+        }
+        return duration;
+    }
     /// <summary>ft_f: sum of leg flight times.</summary>
     public int FlightFlightTime(Flight f) => f.LegIds.Sum(l => Legs[l].FlightTime(Period));
 

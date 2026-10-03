@@ -29,6 +29,7 @@ public interface ILpSolver : IDisposable
     int AddRow(double lower, double upper, ReadOnlySpan<int> cols, ReadOnlySpan<double> coefs);
 
     void SetColumnBounds(int col, double lower, double upper);
+    void SetObjectiveCoefficient(int col, double objective);
     void SetRowBounds(int row, double lower, double upper);
     /// <summary>Marks a column as integer for MIP solves; LP solves always relax integrality.</summary>
     void SetInteger(int col, bool isInteger);

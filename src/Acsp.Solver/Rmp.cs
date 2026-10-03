@@ -36,9 +36,11 @@ public sealed class Rmp : IDisposable
     private readonly Dictionary<string, int> _stringIndex = [];
     private readonly Dictionary<int, int> _extCol = [];     // external flight id -> column
     private readonly List<(int Od, int Flight)> _cuts = [];
-    private readonly List<int> _artificialCols = [];
+    private readonly List<(int Col, double Upper)> _artificialCols = [];
+    private readonly List<(int Col, double Objective)> _economicCols = [];
+    private bool _balanceArtificialsAdded;
+    public bool IsPhaseOne { get; private set; }
     private int[]? _recourseCol; // deliver-all: contracted delivery column per od
-    private const double BigM = 1e7;
 
     public IReadOnlyList<PathCol> Paths => _paths;
     public IReadOnlyList<StringCol> Strings => _strings;
@@ -70,7 +72,7 @@ public sealed class Rmp : IDisposable
             {
                 Span<int> r = [_odRow[od.Id]];
                 Span<double> c = [1.0];
-                _recourseCol[od.Id] = _lp.AddColumn(od.Rate - recourse[od.Id], 0, od.Weight, r, c);
+                _recourseCol[od.Id] = AddEconomicColumn(od.Rate - recourse[od.Id], 0, od.Weight, r, c);
             }
         }
 
@@ -109,22 +111,22 @@ public sealed class Rmp : IDisposable
                 ? [_fleetRow[g.Fleet]]
                 : [_eventRow[g.FromEvent], _eventRow[g.ToEvent], _fleetRow[g.Fleet]];
             Span<double> coefs = g.FromEvent == g.ToEvent ? [g.Chi] : [1.0, -1.0, g.Chi];
-            _lp.AddColumn(-_inst.Fleets[g.Fleet].FixedCostPerAircraft * g.Chi, 0, Inf, rows, coefs);
+            AddEconomicColumn(-_inst.Fleets[g.Fleet].FixedCostPerAircraft * g.Chi, 0, Inf, rows, coefs);
         }
 
-        // artificial columns keep the RMP feasible while columns are still missing (colgen
-        // phase-1): cover rows may be satisfied and fleet rows relaxed at a large penalty.
+        // Artificial columns are disabled in the economic model. A separate phase I
+        // minimizes their usage, independently of the monetary scale of the instance.
         foreach (var f in inst.CargoFlights)
         {
             Span<int> r = [_coverRow[f.Id]];
             Span<double> c = [1.0];
-            _artificialCols.Add(_lp.AddColumn(-BigM, 0, 1, r, c));
+            _artificialCols.Add((_lp.AddColumn(-1, 0, 0, r, c), 1));
         }
         foreach (var k in inst.Fleets)
         {
             Span<int> r = [_fleetRow[k.Id]];
             Span<double> c = [-1.0];
-            _artificialCols.Add(_lp.AddColumn(-BigM, 0, Inf, r, c));
+            _artificialCols.Add((_lp.AddColumn(-1, 0, 0, r, c), Inf));
         }
 
         // booking variables for external flights with fixed costs (§4.1)
@@ -137,7 +139,7 @@ public sealed class Rmp : IDisposable
                 rows.Add(_legWeightRow[lid]); coefs.Add(-inst.Legs[lid].MaxWeight);
                 rows.Add(_legVolumeRow[lid]); coefs.Add(-inst.Legs[lid].MaxVolume);
             }
-            int col = _lp.AddColumn(-f.ExternalFixedCost, 0, 1,
+            int col = AddEconomicColumn(-f.ExternalFixedCost, 0, 1,
                 System.Runtime.InteropServices.CollectionsMarshal.AsSpan(rows),
                 System.Runtime.InteropServices.CollectionsMarshal.AsSpan(coefs));
             _lp.SetInteger(col, true);
@@ -146,6 +148,40 @@ public sealed class Rmp : IDisposable
     }
 
     // ---------------------------------------------------------------- columns
+
+    private int AddEconomicColumn(double objective, double lower, double upper,
+        ReadOnlySpan<int> rows, ReadOnlySpan<double> coefs)
+    {
+        int col = _lp.AddColumn(IsPhaseOne ? 0 : objective, lower, upper, rows, coefs);
+        _economicCols.Add((col, objective));
+        return col;
+    }
+
+    /// <summary>Phase I maximizes minus artificial usage. Balance artificials also allow
+    /// pricing to restore feasibility after a branch fixes a string to one.</summary>
+    public void BeginPhaseOne()
+    {
+        if (IsPhaseOne) return;
+        if (!_balanceArtificialsAdded)
+        {
+            foreach (int row in _eventRow)
+                foreach (double sign in new[] { -1.0, 1.0 })
+                    _artificialCols.Add((_lp.AddColumn(-1, 0, 0, [row], [sign]), Inf));
+            _balanceArtificialsAdded = true;
+        }
+        IsPhaseOne = true;
+        foreach (var (col, _) in _economicCols) _lp.SetObjectiveCoefficient(col, 0);
+        foreach (var (col, upper) in _artificialCols) _lp.SetColumnBounds(col, 0, upper);
+    }
+
+    /// <summary>Restore profit coefficients and prohibit artificial feasibility.</summary>
+    public void EndPhaseOne()
+    {
+        if (!IsPhaseOne) return;
+        IsPhaseOne = false;
+        foreach (var (col, objective) in _economicCols) _lp.SetObjectiveCoefficient(col, objective);
+        foreach (var (col, _) in _artificialCols) _lp.SetColumnBounds(col, 0, 0);
+    }
 
     /// <summary>Adds a cargo flow path column; returns false if it already exists.</summary>
     /// <summary>Whether this exact column is already in the master (then its true reduced
@@ -159,7 +195,7 @@ public sealed class Rmp : IDisposable
     public double TruePathRc(CargoPath p, MasterDuals d)
     {
         var od = _inst.Ods[p.OdId];
-        double rc = p.Margin(_inst) - d.OdDemand[p.OdId];
+        double rc = d.ObjectiveScale * p.Margin(_inst) - d.OdDemand[p.OdId];
         foreach (var lid in p.LegIds)
             rc -= d.LegWeight[lid] + od.VolumePerTonne * d.LegVolume[lid];
         foreach (var fid in p.LegIds.Select(l => _inst.Legs[l].FlightId).Distinct())
@@ -183,7 +219,7 @@ public sealed class Rmp : IDisposable
         foreach (var fid in p.LegIds.Select(l => _inst.Legs[l].FlightId).Distinct())
             if (_cutRow.TryGetValue((p.OdId, fid), out int cr))
             { rows.Add(cr); coefs.Add(1.0); }
-        int col = _lp.AddColumn(p.Margin(_inst), 0, Inf,
+        int col = AddEconomicColumn(p.Margin(_inst), 0, Inf,
             System.Runtime.InteropServices.CollectionsMarshal.AsSpan(rows),
             System.Runtime.InteropServices.CollectionsMarshal.AsSpan(coefs));
         _paths.Add(new PathCol(p, col));
@@ -196,6 +232,8 @@ public sealed class Rmp : IDisposable
     {
         var key = s.Key();
         if (_stringIndex.ContainsKey(key)) return false;
+        if (!s.IsFeasible(_inst, WithMaintenance, out var reason))
+            throw new ArgumentException($"Infeasible string [{key}]: {reason}", nameof(s));
         int chi = Network.ChiOfString(s);
         int k = s.FleetId;
         var rows = new List<int>();
@@ -219,7 +257,7 @@ public sealed class Rmp : IDisposable
         rows.Add(_eventRow[Network.ArrEvent[k, s.FlightIds[^1]]]); coefs.Add(-1.0);
         if (chi != 0) { rows.Add(_fleetRow[k]); coefs.Add(chi); }
         double obj = -s.Cost(_inst, WithMaintenance) - chi * _inst.Fleets[k].FixedCostPerAircraft;
-        int col = _lp.AddColumn(obj, 0, 1,
+        int col = AddEconomicColumn(obj, 0, 1,
             System.Runtime.InteropServices.CollectionsMarshal.AsSpan(rows),
             System.Runtime.InteropServices.CollectionsMarshal.AsSpan(coefs));
         _lp.SetInteger(col, true);
@@ -251,26 +289,21 @@ public sealed class Rmp : IDisposable
     }
 
     /// <summary>
-    /// Seeds the RMP with trivial (single-flight) strings so that an initial feasible solution
-    /// exists (§5). With maintenance, only maintenance-feasible trivial strings are added.
+    /// Seeds feasible single-flight strings. A mandatory flight without a trivial string
+    /// may still belong to a feasible longer string; phase-I pricing will search for it.
     /// </summary>
     public int SeedTrivialStrings()
     {
         int added = 0;
         foreach (var f in _inst.CargoFlights)
         {
-            bool any = false;
             for (int k = 0; k < _inst.Fleets.Length; k++)
             {
                 if (!_inst.Compatible(k, f.Id)) continue;
                 var s = new FlightString { FleetId = k, FlightIds = [f.Id] };
                 if (!s.IsFeasible(_inst, WithMaintenance, out _)) continue;
                 if (AddString(s)) added++;
-                any = true;
             }
-            if (!any && f.IsMandatory)
-                throw new InvalidOperationException(
-                    $"mandatory flight {f.Code} has no feasible trivial string; instance is infeasible");
         }
         return added;
     }
@@ -324,6 +357,7 @@ public sealed class Rmp : IDisposable
     /// </summary>
     public LpResult SolveLpWithSelectionFixed(Solution sol)
     {
+        EndPhaseOne();
         var want = sol.SelectedStrings.Select(s => s.Key()).ToHashSet();
         foreach (var sc in _strings)
         {
@@ -342,8 +376,11 @@ public sealed class Rmp : IDisposable
     }
 
     public LpResult SolveMipOnCurrentColumns(double timeLimitSeconds, double gap = 1e-4,
-        Solution? mipStart = null) =>
-        _lp.SolveMip(timeLimitSeconds, gap, mipStart is null ? null : BuildMipStart(mipStart));
+        Solution? mipStart = null)
+    {
+        EndPhaseOne();
+        return _lp.SolveMip(timeLimitSeconds, gap, mipStart is null ? null : BuildMipStart(mipStart));
+    }
 
     /// <summary>
     /// Primal heuristic MIP restricted to a local-branching ball (Fischetti-Lodi 2003): at
@@ -356,6 +393,7 @@ public sealed class Rmp : IDisposable
     public LpResult SolveMipLocalBranch(double timeLimitSeconds, Solution incumbent, int k,
         double gap = 1e-4)
     {
+        EndPhaseOne();
         var sel = incumbent.SelectedStrings.Select(s => s.Key()).ToHashSet();
         var cols = new List<int>(_strings.Count + _extCol.Count);
         var coefs = new List<double>(_strings.Count + _extCol.Count);
@@ -404,6 +442,7 @@ public sealed class Rmp : IDisposable
     public MasterDuals GetDuals(LpResult res)
     {
         var d = MasterDuals.Zero(_inst);
+        d.ObjectiveScale = IsPhaseOne ? 0 : 1;
         foreach (var od in _inst.Ods) d.OdDemand[od.Id] = res.RowDuals[_odRow[od.Id]];
         foreach (var leg in _inst.Legs)
         {
@@ -430,9 +469,10 @@ public sealed class Rmp : IDisposable
 
     // ---------------------------------------------------------------- solution extraction
 
-    /// <summary>Total artificial-column usage; above tolerance the node is truly infeasible.</summary>
+    /// <summary>Total artificial usage; nonzero usage alone does not prove infeasibility
+    /// until exhaustive phase-I pricing has ruled out feasibility-restoring columns.</summary>
     public double ArtificialUsage(LpResult res) =>
-        _artificialCols.Sum(c => res.ColumnValues[c]);
+        _artificialCols.Sum(c => res.ColumnValues[c.Col]);
 
     public bool IsIntegral(LpResult res, double tol = 1e-6)
     {

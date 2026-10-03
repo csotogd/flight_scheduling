@@ -43,6 +43,9 @@ public sealed class HighsSolver : ILpSolver
     public void SetColumnBounds(int col, double lower, double upper) =>
         Check(Native.Highs_changeColBounds(_h, col, lower, upper), "changeColBounds");
 
+    public void SetObjectiveCoefficient(int col, double objective) =>
+        Check(Native.Highs_changeColCost(_h, col, -objective), "changeColCost");
+
     public void SetRowBounds(int row, double lower, double upper)
     {
         Span<int> set = [row];
@@ -164,6 +167,7 @@ public sealed class HighsSolver : ILpSolver
             int nnz, ref int index, ref double value);
         [DllImport(Lib)] public static extern int Highs_changeColBounds(IntPtr h, int col,
             double lower, double upper);
+        [DllImport(Lib)] public static extern int Highs_changeColCost(IntPtr h, int col, double cost);
         [DllImport(Lib)] public static extern int Highs_changeRowsBoundsBySet(IntPtr h, int n,
             ref int set, ref double lower, ref double upper);
         [DllImport(Lib)] public static extern int Highs_changeColsIntegralityBySet(IntPtr h, int n,

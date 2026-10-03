@@ -170,7 +170,7 @@ public sealed class NetworkDesigner
         // (when one is found) becomes the guaranteed initial incumbent, and the MIP search
         // spends its whole budget improving instead of hunting for a first cover
         var current = designBase;
-        if (_opt.SeedWithCover)
+        if (_opt.SeedWithCover && !_opt.WithMaintenance)
         {
             var cover = CoverConstructor.Build(current);
             if (cover.Solution is not null)

@@ -68,7 +68,9 @@ public sealed class ColumnGeneration
     /// <param name="DualBound">Upper bound on the true node LP: a Farley bound whose path
     /// term comes from an uncapped bound pass of PRICE-P (<see cref="PathPricer.PriceBound"/>)
     /// and whose string term is vacuous without maintenance (every feasible string is a
-    /// pre-seeded single flight) or a flight-cover aggregation with maintenance.</param>
+    /// pre-seeded single flight) or a flight-cover aggregation with maintenance. In phase I,
+    /// returns -infinity only for proven infeasibility, otherwise +infinity; artificial
+    /// penalties are never returned as monetary bounds.</param>
     /// <param name="BoundCertified">True when every ingredient of DualBound is provably valid:
     /// the bound-pass path sweep completed for every od (label budget not hit, capacity duals
     /// nonnegative) and string pricing was exhaustive — always the case without maintenance,
@@ -99,7 +101,13 @@ public sealed class ColumnGeneration
         Func<bool>? hardDeadline = null)
     {
         int pricingIters = 0, cuttingIters = 0, pathsAdded = 0, stringsAdded = 0, cutsAdded = 0;
+        _rmp.EndPhaseOne();
         var lp = _rmp.SolveLp();
+        if (lp.Status == LpStatus.Infeasible)
+        {
+            _rmp.BeginPhaseOne();
+            lp = _rmp.SolveLp();
+        }
         MasterDuals? center = null; // dual stabilization center (last true duals seen)
         // cheap per-iteration Farley estimate used ONLY to steer the gap extension: it is
         // built from the capped pricers, which can miss the best missing column, so it is
@@ -108,10 +116,46 @@ public sealed class ColumnGeneration
         double finalDual = double.PositiveInfinity;
         bool finalCertified = false;
 
+        NodeResult Finish(double bound, bool certified, bool deadlineHit = false)
+        {
+            if (_rmp.IsPhaseOne)
+            {
+                if (lp.Status == LpStatus.Optimal && _rmp.ArtificialUsage(lp) <= _opt.Eps)
+                {
+                    // The iteration limit may fall exactly on phase-I completion.
+                    // Return a profit solution, with unpriced economic headroom retained.
+                    _rmp.EndPhaseOne();
+                    lp = _rmp.SolveLp();
+                    bound = double.PositiveInfinity;
+                    certified = false;
+                }
+                else
+                {
+                    // A phase-I objective is not money. Only a certified strictly negative
+                    // upper bound proves that zero artificial usage is impossible.
+                    bool infeasible = certified && bound < -_opt.Eps;
+                    bound = infeasible ? double.NegativeInfinity : double.PositiveInfinity;
+                    certified = infeasible;
+                }
+            }
+            return new NodeResult(lp, new ColGenStats(pricingIters, cuttingIters,
+                pathsAdded, stringsAdded, cutsAdded), deadlineHit, bound, certified);
+        }
+
+        bool MissingString(FlightString s) => !_rmp.ContainsString(s);
+
         for (int iter = 0; iter < _opt.MaxIterations; iter++)
         {
             ct.ThrowIfCancellationRequested();
-            if (lp.Status == LpStatus.Infeasible) break;
+            if (lp.Status != LpStatus.Optimal) break;
+            if (_rmp.IsPhaseOne && _rmp.ArtificialUsage(lp) <= _opt.Eps)
+            {
+                _rmp.EndPhaseOne();
+                lp = _rmp.SolveLp();
+                center = null;
+                steerBound = double.PositiveInfinity;
+                if (lp.Status != LpStatus.Optimal) break;
+            }
 
             // ---- pricing iteration: paths and strings in parallel (§5)
             pricingIters++;
@@ -132,7 +176,8 @@ public sealed class ColumnGeneration
             var swPrice = System.Diagnostics.Stopwatch.StartNew();
             var pathTask = Task.Run(() => _pathPricer.Price(duals, rest, _opt.Eps), ct);
             var stringTask = priceStrings
-                ? Task.Run(() => _stringPricer.Price(duals, rest, _opt.MaxStringColumnsPerIteration, _opt.Eps), ct)
+                ? Task.Run(() => _stringPricer.Price(duals, rest,
+                    _opt.MaxStringColumnsPerIteration, _opt.Eps, MissingString), ct)
                 : Task.FromResult(new List<StringPricer.PricedString>());
             Task.WaitAll([pathTask, stringTask], ct);
             _lastPriceSeconds = swPrice.Elapsed.TotalSeconds;
@@ -161,9 +206,7 @@ public sealed class ColumnGeneration
                 var (db, certified) = lp.Status == LpStatus.Optimal
                     ? CertifiedFarley(lp.Objective, trueDuals, rest)
                     : (double.PositiveInfinity, false);
-                return new NodeResult(lp, new ColGenStats(pricingIters, cuttingIters,
-                    pathsAdded, stringsAdded, cutsAdded),
-                    DeadlineHit: true, DualBound: db, BoundCertified: certified);
+                return Finish(db, certified, deadlineHit: true);
             }
 
             center = trueDuals;
@@ -189,7 +232,7 @@ public sealed class ColumnGeneration
             {
                 var truePaths = _pathPricer.Price(trueDuals, rest, _opt.Eps);
                 var trueStrings = _stringPricer.Price(trueDuals, rest,
-                    _opt.MaxStringColumnsPerIteration, _opt.Eps);
+                    _opt.MaxStringColumnsPerIteration, _opt.Eps, MissingString);
                 if (lp.Status == LpStatus.Optimal)
                     steerBound = Math.Min(steerBound,
                         SteeringBound(lp.Objective, truePaths, trueStrings));
@@ -203,7 +246,8 @@ public sealed class ColumnGeneration
             // (the mispricing branch above already repriced strings with the true duals)
             if (!priceStrings && !smoothed)
             {
-                var late = _stringPricer.Price(trueDuals, rest, _opt.MaxStringColumnsPerIteration, _opt.Eps);
+                var late = _stringPricer.Price(trueDuals, rest,
+                    _opt.MaxStringColumnsPerIteration, _opt.Eps, MissingString);
                 int lateAdded = late.Count(s => _rmp.AddString(s.Str));
                 stringsAdded += lateAdded;
                 if (lateAdded > 0) { lp = _rmp.SolveLp(); continue; }
@@ -241,9 +285,7 @@ public sealed class ColumnGeneration
             break; // no improving columns and no violated cuts
         }
 
-        return new NodeResult(lp,
-            new ColGenStats(pricingIters, cuttingIters, pathsAdded, stringsAdded, cutsAdded),
-            DeadlineHit: false, DualBound: finalDual, BoundCertified: finalCertified);
+        return Finish(finalDual, finalCertified);
     }
 
     /// <summary>

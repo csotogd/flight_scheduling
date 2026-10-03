@@ -41,6 +41,7 @@ public static class SolutionJson
     };
 
     private static double? Fin(double v) => double.IsFinite(v) ? Math.Round(v, 4) : null;
+    private static double? FiniteOrNull(double v) => double.IsFinite(v) ? v : null;
 
     /// <param name="design">Optional autonomous-design report (rounds + proposal lifecycle),
     /// embedded verbatim under the 'design' property.</param>
@@ -102,8 +103,8 @@ public static class SolutionJson
             stats = new
             {
                 objective = res.Objective,
-                bound = res.Bound,
-                gap = res.Gap,
+                bound = FiniteOrNull(res.Bound),
+                gap = FiniteOrNull(res.Gap),
                 nodes = res.NodesExplored,
                 seconds = res.ElapsedSeconds,
                 firstIncumbentObjective = res.FirstIncumbentObjective,

@@ -13,6 +13,25 @@ public abstract class LpSolverContractTests
     protected abstract ILpSolver? Create();
 
     [Fact]
+    public void Objective_changes_restore_economic_prices_after_feasibility()
+    {
+        using var lp = Create();
+        if (lp is null) return;
+        int row = lp.AddRow(1, 1, [], []);
+        int real = lp.AddColumn(-20000000, 0, 1, [row], [1.0]);
+        int artificial = lp.AddColumn(-1, 0, 1, [row], [1.0]);
+        lp.SetObjectiveCoefficient(real, 0);
+        var phaseOne = lp.SolveLp();
+        Assert.Equal(0, phaseOne.Objective, 6);
+        Assert.Equal(0, phaseOne.ColumnValues[artificial], 6);
+        lp.SetColumnBounds(artificial, 0, 0);
+        lp.SetObjectiveCoefficient(real, -20000000);
+        var economic = lp.SolveLp();
+        Assert.Equal(-20000000, economic.Objective, 5);
+        Assert.Equal(1, economic.ColumnValues[real], 6);
+    }
+
+    [Fact]
     public void Solves_small_lp_with_correct_duals()
     {
         // max 3x + 2y  s.t.  x + y <= 4,  x + 3y <= 6,  x,y >= 0

@@ -73,11 +73,11 @@ public sealed class StringPricer
     /// <summary>Reduced cost of a complete string (used by tests and for RMP column data).</summary>
     public double ReducedCost(FlightString s, MasterDuals duals)
     {
-        double rc = -s.Cost(_inst, _withMaintenance);
+        double rc = -duals.ObjectiveScale * s.Cost(_inst, _withMaintenance);
         int k = s.FleetId;
         long span = s.ElapsedMinutes(_inst) + TrailingTime(k, s.FlightIds[^1]);
         int chi = Chi(_inst.FlightDep(_inst.Flights[s.FlightIds[0]]), span);
-        rc -= chi * (_inst.Fleets[k].FixedCostPerAircraft + duals.FleetSize[k]);
+        rc -= chi * (duals.ObjectiveScale * _inst.Fleets[k].FixedCostPerAircraft + duals.FleetSize[k]);
         rc -= duals.DepBalance[k, s.FlightIds[0]];
         rc += duals.ArrBalance[k, s.FlightIds[^1]];
         foreach (var fid in s.FlightIds)
@@ -98,15 +98,15 @@ public sealed class StringPricer
         : _inst.MinGroundTime(_inst.FlightDestination(_inst.Flights[lastFlight]), fleet);
 
     public List<PricedString> Price(MasterDuals duals, PricingRestrictions rest,
-        int maxColumns = 200, double eps = 1e-6)
+        int maxColumns = 200, double eps = 1e-6, Func<FlightString, bool>? include = null)
         => _withMaintenance
-            ? PriceWithMaintenance(duals, rest, maxColumns, eps)
-            : PriceSingleFlights(duals, rest, maxColumns, eps);
+            ? PriceWithMaintenance(duals, rest, maxColumns, eps, include)
+            : PriceSingleFlights(duals, rest, maxColumns, eps, include);
 
     // ---------------------------------------------------------------- FARP-T
 
     private List<PricedString> PriceSingleFlights(MasterDuals duals, PricingRestrictions rest,
-        int maxColumns, double eps)
+        int maxColumns, double eps, Func<FlightString, bool>? include)
     {
         var found = new List<PricedString>();
         foreach (var f in _inst.CargoFlights)
@@ -115,6 +115,7 @@ public sealed class StringPricer
             {
                 if (!rest.FlightVisibleForFleet[k][f.Id]) continue;
                 var s = new FlightString { FleetId = k, FlightIds = [f.Id] };
+                if (include is not null && !include(s)) continue;
                 double rc = ReducedCost(s, duals);
                 if (rc > eps)
                 {
@@ -132,7 +133,7 @@ public sealed class StringPricer
         int FlightMinutes, int Cycles, long AbsArr, int DepFirst, long AbsDepFirst, Label? Pred);
 
     private List<PricedString> PriceWithMaintenance(MasterDuals duals, PricingRestrictions rest,
-        int maxColumns, double eps)
+        int maxColumns, double eps, Func<FlightString, bool>? include)
     {
         var p = _inst.Period;
         var candidates = new List<PricedString>();
@@ -143,7 +144,7 @@ public sealed class StringPricer
         foreach (var f in _inst.CargoFlights)
             for (int k = 0; k < nk; k++)
             {
-                double g = -f.FixedCostByFleet[k] - duals.FlightCover[f.Id];
+                double g = -duals.ObjectiveScale * f.FixedCostByFleet[k] - duals.FlightCover[f.Id];
                 foreach (var lid in f.LegIds)
                     g += _inst.Fleets[k].PayloadAtKm(_inst.Legs[lid].DistanceKm) * duals.LegWeight[lid]
                        + _inst.Fleets[k].MaxVolume * duals.LegVolume[lid];
@@ -177,14 +178,19 @@ public sealed class StringPricer
             long span = elapsed + fleet.MaintenanceDuration;
             int chi = Chi(lab.DepFirst, span);
             double mntCost = destAp.MaintenanceCost.Length > lab.Fleet ? destAp.MaintenanceCost[lab.Fleet] : 0;
-            double rc = lab.Cost - mntCost - chi * (fleet.FixedCostPerAircraft + duals.FleetSize[lab.Fleet])
+            double rc = lab.Cost - duals.ObjectiveScale * mntCost
+                        - chi * (duals.ObjectiveScale * fleet.FixedCostPerAircraft + duals.FleetSize[lab.Fleet])
                         + duals.ArrBalance[lab.Fleet, lab.Flight];
             if (rc <= eps) return;
             var flights = new List<int>();
             for (var cur = lab; cur is not null; cur = cur.Pred) flights.Add(cur.Flight);
             flights.Reverse();
+            var str = new FlightString { FleetId = lab.Fleet, FlightIds = [.. flights] };
+            // Existing columns at their upper bound can have positive reduced costs.
+            // Exclude them BEFORE the top-K limit so they cannot starve new columns.
+            if (include is not null && !include(str)) return;
             candidates.Add(new PricedString(
-                new FlightString { FleetId = lab.Fleet, FlightIds = [.. flights] }, rc, chi));
+                str, rc, chi));
         }
 
         bool Visited(Label lab, int flight)
@@ -220,15 +226,15 @@ public sealed class StringPricer
                 }
             }
 
-            // pull labels from predecessor flights up to two week-slots back: a predecessor
-            // crossing the period boundary (dep + dur > N) whose successor departs earlier
-            // in the week than it arrives needs week - 2 (any further back the wait would
-            // reach a full period, which the wait < N check below rejects)
+            // A multi-period flight can begin more than two week-slots earlier. Derive
+            // the departure slots from its full duration and the admissible wait < N.
             foreach (var gid in _predFlights[fid])
             {
                 var g = _inst.Flights[gid];
                 if (!rest.FollowOnAllowed(g.Id, fid)) continue;
-                for (int w = Math.Max(0, week - 2); w <= week; w++)
+                long arrivalInWeekZero = (long)_inst.FlightDep(g) + _inst.FlightDuration(g);
+                int firstWeek = (int)Math.Max(0, (absDep - arrivalInWeekZero) / p.N);
+                for (int w = firstWeek; w <= Math.Min(week, firstWeek + 1); w++)
                 {
                     if (!labelsAt.TryGetValue((g.Id, w), out var predLabels)) continue;
                     foreach (var lab in predLabels)

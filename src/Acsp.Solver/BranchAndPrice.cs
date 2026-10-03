@@ -97,9 +97,10 @@ public sealed class BranchAndPrice
         bool boundCertified = true;
 
         colgen.IterationProgress += (iter, obj, added) =>
-            Progress?.Invoke(new BpcProgress(nodesExplored, -1, incumbent, obj,
+            Progress?.Invoke(new BpcProgress(nodesExplored, -1, incumbent,
+                rmp.IsPhaseOne ? double.PositiveInfinity : obj,
                 double.NaN, rmp.Paths.Count, rmp.Strings.Count, rmp.CutCount,
-                sw.Elapsed.TotalSeconds, $"colgen iter {iter} (+{added} cols, " +
+                sw.Elapsed.TotalSeconds, $"{(rmp.IsPhaseOne ? "feasibility" : "colgen")} iter {iter} (+{added} cols, " +
                 $"price {colgen.LastPriceSeconds:F1}s add {colgen.LastAddSeconds:F1}s " +
                 $"lp {colgen.LastLpSeconds:F1}s)"));
 
@@ -122,7 +123,6 @@ public sealed class BranchAndPrice
         double OpenBound()
         {
             double b = stack.Count == 0 ? processingBound : Math.Max(stack.Max(s => s.InheritedBound), processingBound);
-            if (double.IsPositiveInfinity(b) && stack.Count == 0) b = incumbent;
             return Math.Min(b, rootBound);
         }
         static double Gap(double inc, double bound)
@@ -134,6 +134,11 @@ public sealed class BranchAndPrice
 
         void TryAcceptIncumbent(Solution sol, double obj, string source)
         {
+            if (sol.WithMaintenance != _opt.WithMaintenance)
+            {
+                Report($"incumbent rejected (maintenance mode mismatch, {source})");
+                return;
+            }
             // NaN passes every <= comparison: a poisoned objective would be accepted and
             // then poison the incumbent guard itself for the rest of the run
             if (double.IsNaN(obj) || obj <= incumbent + 1e-6) return;
@@ -194,21 +199,28 @@ public sealed class BranchAndPrice
             var lp = result.Lp;
             // when column generation was cut off by the deadline, lp.Objective is not a valid
             // bound (improving columns may remain) — the Farley bound in DualBound is
-            if (nodesExplored == 1 && lp.Status == LpStatus.Optimal) rootBound = result.DualBound;
+            // Heuristic pricing estimates cannot justify pruning, even when finite.
+            double validNodeBound = result.BoundCertified ? result.DualBound : double.PositiveInfinity;
+            if (nodesExplored == 1 && lp.Status == LpStatus.Optimal) rootBound = validNodeBound;
 
             // discarded-but-unsolved subtrees stay represented in the final bound by the
             // best valid bound available for them: the node's Farley bound if finite (it
             // bounds the artificial-relaxed LP, hence the subtree), else the inherited one.
             // An LP reported Infeasible is a restriction result only — missing columns
             // could restore feasibility, so the subtree is NOT proven empty.
-            double discardBound() => Math.Min(result.DualBound, node.InheritedBound);
+            double discardBound() => Math.Min(validNodeBound, node.InheritedBound);
             if (lp.Status == LpStatus.Infeasible)
             { prunedBound = Math.Max(prunedBound, discardBound()); Report("pruned (infeasible)"); continue; }
             if (lp.Status != LpStatus.Optimal)
             { prunedBound = Math.Max(prunedBound, discardBound()); Report($"node status {lp.Status}"); continue; }
             if (rmp.ArtificialUsage(lp) > 1e-6)
-            { prunedBound = Math.Max(prunedBound, discardBound()); Report("pruned (artificials in basis: infeasible)"); continue; }
-            double nodeBound = Math.Min(result.DualBound, node.InheritedBound);
+            {
+                prunedBound = Math.Max(prunedBound, discardBound());
+                Report(double.IsNegativeInfinity(validNodeBound)
+                    ? "pruned (phase I proved infeasible)" : "unresolved (phase I incomplete)");
+                continue;
+            }
+            double nodeBound = Math.Min(validNodeBound, node.InheritedBound);
             processingBound = nodeBound;
             if (!double.IsNegativeInfinity(incumbent) &&
                 nodeBound - incumbent <= Math.Abs(incumbent) * _opt.GapTarget)
@@ -216,18 +228,10 @@ public sealed class BranchAndPrice
 
             if (rmp.IsIntegral(lp))
             {
-                // if the candidate is NOT adopted (dominated, or rejected by the
-                // feasibility check), the fathomed subtree must stay represented by its
-                // bound — otherwise a rejected optimum would silently leave the accounting.
-                // An ADOPTED node covers its subtree by the incumbent only when colgen
-                // converged: under truncation (deadline, or iteration cap leaving
-                // DualBound = +inf) lp.Objective is not the subtree optimum, so the
-                // certified headroom must stay represented as well
-                double before = incumbent;
                 TryAcceptIncumbent(rmp.ExtractSolution(lp), lp.Objective, "node");
-                if (incumbent <= before || result.DeadlineHit
-                    || double.IsPositiveInfinity(result.DualBound))
-                    prunedBound = Math.Max(prunedBound, nodeBound);
+                // Integrality of a restricted master does not certify convergence of
+                // pricing. Preserve ALL remaining headroom, including finite Farley gaps.
+                prunedBound = Math.Max(prunedBound, nodeBound);
                 continue;
             }
 
@@ -291,11 +295,8 @@ public sealed class BranchAndPrice
             if (decision is null)
             {
                 // numerically integral after all; accept (same bound bookkeeping as above)
-                double beforeInc = incumbent;
                 TryAcceptIncumbent(rmp.ExtractSolution(lp), lp.Objective, "node");
-                if (incumbent <= beforeInc || result.DeadlineHit
-                    || double.IsPositiveInfinity(result.DualBound))
-                    prunedBound = Math.Max(prunedBound, nodeBound);
+                prunedBound = Math.Max(prunedBound, nodeBound);
                 continue;
             }
             decision.OneBranch.InheritedBound = nodeBound;
@@ -324,6 +325,8 @@ public sealed class BranchAndPrice
         double finalBound = Math.Max(incumbent, stack.Count == 0
             ? Math.Min(rootBound, prunedBound)
             : Math.Max(OpenBound(), Math.Min(rootBound, prunedBound)));
+        if (stopReason == "tree exhausted" && double.IsPositiveInfinity(finalBound))
+            stopReason = "pricing incomplete";
         sw.Stop();
         // exact needs both an exact pricer (no maintenance) AND certified pruning bounds:
         // an uncertified bound used to prune could have cut off the true optimum

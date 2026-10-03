@@ -72,6 +72,9 @@ public sealed class CplexSolver : ILpSolver
         Check(Native.CPXchgbds(_env, _lp, 2, [col, col], [(byte)'L', (byte)'U'],
             [Clamp(lower), Clamp(upper)]), "chgbds");
 
+    public void SetObjectiveCoefficient(int col, double objective) =>
+        Check(Native.CPXchgobj(_env, _lp, 1, [col], [objective]), "chgobj");
+
     public void SetRowBounds(int row, double lower, double upper)
     {
         var (sense, rhs, range) = RowForm(lower, upper);
@@ -208,6 +211,8 @@ public sealed class CplexSolver : ILpSolver
             IntPtr env, out int status, string name);
         [DllImport(Lib)] public static extern int CPXfreeprob(IntPtr env, ref IntPtr lp);
         [DllImport(Lib)] public static extern int CPXchgobjsen(IntPtr env, IntPtr lp, int maxormin);
+        [DllImport(Lib)] public static extern int CPXchgobj(IntPtr env, IntPtr lp, int cnt,
+            int[] indices, double[] values);
         [DllImport(Lib)] public static extern int CPXaddcols(IntPtr env, IntPtr lp, int ccnt,
             int nzcnt, double[] obj, int[] cmatbeg, int[] cmatind, double[] cmatval,
             double[] lb, double[] ub, IntPtr colname);

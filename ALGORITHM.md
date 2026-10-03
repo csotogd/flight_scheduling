@@ -367,6 +367,32 @@ two-week-slot connection window and its strict `wait < N` rule, the unconstraine
 elapsed-limit overflow, week-wrapping rotation feasibility and aircraft accounting,
 and the negative-cut-dual certification guard of the bound pass.
 
+### 5.3 October 2026 mathematical audit corrections
+
+The regression suite now includes small counterexamples with independently known answers:
+
+- **Column batches and certificates:** PRICE-S filters existing columns before its top-K
+  limit. Positive reduced costs on columns at their upper bounds can no longer starve
+  missing columns. An integral restricted master retains its full remaining Farley bound;
+  integrality alone does not prove pricing convergence. A six-flight maintenance example
+  now reaches the independently known optimum of -537 instead of reporting -637 at zero gap.
+- **Feasibility before profit:** if the economic master is infeasible, a separate phase I
+  maximizes minus artificial usage with all economic coefficients set to zero, including
+  in both pricers. Once feasibility is reached, artificials are fixed to zero and profit
+  coefficients are restored. No fixed monetary Big-M is used. Interrupted phase-I bounds
+  are never interpreted as monetary bounds. Missing trivial maintenance strings trigger
+  pricing rather than an immediate infeasibility declaration.
+- **Maintenance consistency:** incumbent seeds must match the requested maintenance mode;
+  the no-maintenance cover constructor is not used to seed maintenance design runs.
+- **Periodic duration and curfews:** flight duration sums all legs and intermediate waits,
+  retaining whole periods. String pricing also connects multi-period predecessors. Arrival
+  curfews participate in fleet-flight compatibility, before a flight can enter the master.
+
+Uncertified pricing estimates are not used to prune or report a finite global upper bound.
+In particular, default label-limited maintenance pricing may return no certified finite
+gap; JSON reports unavailable bounds/gaps as `null`. Exact maintenance pricing remains
+subject to the documented week-window limit.
+
 ## 6. Known limitations
 
 - Night curfews (§4) restrict **arrivals** only: departures inside the curfew window

@@ -7,6 +7,8 @@ namespace Acsp.Solver;
 /// </summary>
 public sealed class MasterDuals
 {
+    /// <summary>0 during feasibility pricing, 1 during profit optimization.</summary>
+    public double ObjectiveScale { get; set; } = 1;
     /// <summary>pi_od of demand rows (14), indexed by od id.</summary>
     public required double[] OdDemand { get; init; }
     /// <summary>pi^w_l of weight rows (15)/(17), indexed by leg id.</summary>
@@ -62,6 +64,7 @@ public sealed class MasterDuals
                 + (1 - alpha) * current.ImpliedBoundCuts.GetValueOrDefault(key);
         return new MasterDuals
         {
+            ObjectiveScale = current.ObjectiveScale,
             OdDemand = Mix(center.OdDemand, current.OdDemand),
             LegWeight = Mix(center.LegWeight, current.LegWeight),
             LegVolume = Mix(center.LegVolume, current.LegVolume),

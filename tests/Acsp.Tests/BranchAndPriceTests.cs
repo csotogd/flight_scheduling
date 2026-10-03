@@ -26,14 +26,19 @@ public class BranchAndPriceTests
             ? BruteForce.AllFeasibleStrings(inst, withMaintenance: true, maxFlights: 5)
             : null;
         var direct = DirectMipSolver.Solve(inst, withMaintenance, paths, strings);
-        Assert.Equal(LpStatus.Optimal, direct.Status);
-        if (direct.Solution is null)
+        if (direct.Status == LpStatus.Infeasible)
         {
-            // genuinely infeasible instance (artificials in the MIP basis): B&P&C must agree
+            // Artificials are disabled in MIP solves: infeasible instances now have the
+            // proper status, rather than an "optimal" artificial solution with no schedule.
+            Assert.Null(direct.Solution);
             var bpcInfeasible = RunBpc(inst, withMaintenance, exactStrings: withMaintenance);
             Assert.Null(bpcInfeasible.Best);
+            Assert.True(bpcInfeasible.BoundCertified);
+            Assert.Equal(double.NegativeInfinity, bpcInfeasible.Bound);
             return;
         }
+        Assert.Equal(LpStatus.Optimal, direct.Status);
+        Assert.NotNull(direct.Solution);
         var directReport = FeasibilityChecker.Check(inst, direct.Solution!);
         Assert.True(directReport.IsFeasible, directReport.ToString());
 

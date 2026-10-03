@@ -214,7 +214,8 @@ public sealed class PathPricer
         complete = true;
         var p = _inst.Period;
         var (hCost, hTime) = BoundsTo(od.Destination);
-        double target = od.Rate - duals.OdDemand[od.Id]; // must exceed path cost + eps
+        double scale = duals.ObjectiveScale;
+        double target = scale * od.Rate - duals.OdDemand[od.Id]; // must exceed path cost + eps
         // cargo handling: unloading eats into the delivery window at the destination end,
         // loading delays the earliest catchable departure at the origin end (see Push/source)
         int handling = _inst.CargoHandlingMinutes;
@@ -222,7 +223,7 @@ public sealed class PathPricer
 
         double NodeCost(Leg leg)
         {
-            double c = leg.VariableCostPerTonne + duals.LegWeight[leg.Id]
+            double c = scale * leg.VariableCostPerTonne + duals.LegWeight[leg.Id]
                        + od.VolumePerTonne * duals.LegVolume[leg.Id];
             return c;
         }
@@ -276,7 +277,7 @@ public sealed class PathPricer
             if (!boundPass && list.Count >= _maxLabelsPerNode) return;
             labels.Add(lab);
             list.Add(labels.Count - 1);
-            double h = useDijkstraOnly ? 0 : hCost[lab.Leg];
+            double h = useDijkstraOnly ? 0 : scale * hCost[lab.Leg];
             pq.Enqueue(labels.Count - 1, lab.Cost + h);
         }
 
@@ -308,7 +309,7 @@ public sealed class PathPricer
                 if (!rest.LegVisible[arc.To]) continue;
                 var next = _inst.Legs[arc.To];
                 var (ec, m) = arc.Transfer ? Enter(next, lab.Mask) : (0.0, lab.Mask);
-                double c = lab.Cost + arc.Cost + NodeCost(next) + ec;
+                double c = lab.Cost + scale * arc.Cost + NodeCost(next) + ec;
                 int t = lab.Time + arc.Time + next.BlockTime(p);
                 Push(new Label(arc.To, c, t, li, m));
             }
